@@ -28,8 +28,3 @@ class OrthoEnc(nn.Module):
         return self.decode(z)
 
 
-def loss_function(recon_x, x):
-    BCE = F.binary_cross_entropy(recon_x, x.view(-1, FIELD_DIMENSION), reduction='sum')
-    return BCE
-
-

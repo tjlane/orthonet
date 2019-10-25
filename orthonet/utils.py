@@ -1,4 +1,5 @@
 
+import torch
 import numpy as np
 
 def binary_normalize(data, retscale=False, asrt=False):
@@ -39,4 +40,5 @@ def binary_normalize(data, retscale=False, asrt=False):
         return data, (offset, scale)
     else:
         return data
+
 
