@@ -54,9 +54,6 @@ def setup_device(args):
 
     loader_kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-    if not os.path.exists('results'):
-        os.mkdir('results')
-
     return device, loader_kwargs
 
 
@@ -143,7 +140,7 @@ def test(epoch, device, test_loader, model, log_interval):
                 comparison = torch.cat([data.view(*comp_shp)[:n],
                                         recon_batch.view(*comp_shp)[:n]])
                 save_image(comparison.cpu(),
-                         'results/reconstruction_' + str(epoch) + '.png', nrow=n)
+                         'results/reconstructions/reconstruction_%d.png' % epoch, nrow=n)
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
@@ -161,8 +158,12 @@ def main():
                                                       args.batch_size, 
                                                       loader_kwargs=loader_kwargs)
 
+    for dirc in ['results', 'results/reconstructions', 'results/samples']:
+        if not os.path.exists(dirc):
+            os.mkdir(dirc)
+
+
     # -------------------
-    # -- input --
 
     field_shape = data_shape[1:]
     input_size  = np.product(field_shape)
@@ -195,7 +196,7 @@ def main():
             sample = torch.randn(64, args.latent_size).to(device)
             sample = model.decode(sample).cpu()
             save_image(sample.view(64, 1, *field_shape),
-                       'results/sample_%d.png' % epoch)
+                       'results/samples/sample_%d.png' % epoch)
 
     with torch.no_grad():
 
@@ -209,11 +210,17 @@ def main():
                        'results/z' + str(a) + '.png')
 
         # embed all the data into the latent space and save
-        (view_data,) = next(iter(test_loader))
+        view_data = test_loader.dataset.tensors[0]
         code = model.encode(view_data.view(-1,input_size).to(device))
+        dec  = model.decode(code)
         f = h5py.File('results/encoding.h5', 'w')
-        f['latent']  = np.array([ c.cpu().numpy() for c in code ])
+        f['latent'] = np.array([ c.cpu().numpy() for c in code ])
+        f['input']  = np.array(view_data.cpu())
+        f['recon']  = np.array(dec.cpu().view(*view_data.shape))
         f.close()
+
+        # save the final model
+        torch.save(model.cpu(), 'results/model.pt')
 
     visual.plot_loss_curves(test_loss, train_loss, save='results/loss_curves.png')
 
