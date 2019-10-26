@@ -3,7 +3,7 @@ import torch
 from torch import autograd
 import numpy as np
 
-
+@torch.enable_grad()
 def jacobian(fxn, x, n_outputs, retain_graph=True):
     """
     Compute the Jacobian of a function.
@@ -41,7 +41,7 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     J = autograd.grad(y, xr,
                       grad_outputs=I, 
                       retain_graph=retain_graph, 
-                      create_graph=True  # for higher order derivatives
+                      create_graph=True,  # for higher order derivatives
                       )
 
     return J[0]
