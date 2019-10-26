@@ -192,7 +192,7 @@ def main():
         with torch.no_grad():
 
             # generate some random samples
-            sample = torch.randn(64, 4).to(device)
+            sample = torch.randn(64, args.latent_size).to(device)
             sample = model.decode(sample).cpu()
             save_image(sample.view(64, 1, *field_shape),
                        'results/sample_%d.png' % epoch)
