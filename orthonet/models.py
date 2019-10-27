@@ -13,23 +13,27 @@ class AE(nn.Module):
         self.input_size  = input_size
         self.latent_size = latent_size
 
-        self.fc1 = nn.Linear(self.input_size, 400)
-        self.fc2 = nn.Linear(400, 30)
-        self.fc3 = nn.Linear(30, self.latent_size)
+        self.fc1 = nn.Linear(self.input_size, 1500)
+        self.fc2 = nn.Linear(1500, 700)
+        self.fc3 = nn.Linear(700, 300)
+        self.fc4 = nn.Linear(300, self.latent_size)
 
-        self.fc3b = nn.Linear(self.latent_size, 30)
-        self.fc2b = nn.Linear(30, 400)
-        self.fc1b = nn.Linear(400, self.input_size)
+        self.fc4b = nn.Linear(self.latent_size, 300)
+        self.fc3b = nn.Linear(300, 700)
+        self.fc2b = nn.Linear(700, 1500)
+        self.fc1b = nn.Linear(1500, self.input_size)
 
         return
 
     def encode(self, x):
         h1 = F.relu(self.fc1(x))
         h2 = F.relu(self.fc2(h1))
-        return self.fc3(h2)
+        h3 = F.relu(self.fc3(h2))
+        return self.fc4(h3)
 
     def decode(self, z):
-        h2b = F.relu(self.fc3b(z))
+        h3b = F.relu(self.fc4b(z))
+        h2b = F.relu(self.fc3b(h3b))
         h1b = F.relu(self.fc2b(h2b))
         return torch.sigmoid(self.fc1b(h1b))
 
@@ -64,17 +68,26 @@ class VAE(nn.Module):
 
         self.beta = beta
 
-        self.fc1  = nn.Linear(self.input_size, 400)
-        self.fc21 = nn.Linear(400, self.latent_size)
-        self.fc22 = nn.Linear(400, self.latent_size)
-        self.fc3  = nn.Linear(self.latent_size, 400)
-        self.fc4  = nn.Linear(400, self.input_size)
+        self.fc1  = nn.Linear(self.input_size, 1500)
+        self.fc2  = nn.Linear(1500, 700)
+        self.fc31 = nn.Linear(700, 300)
+        self.fc32 = nn.Linear(700, 300)
+        self.fc41 = nn.Linear(300, self.latent_size)
+        self.fc42 = nn.Linear(300, self.latent_size)
+
+        self.fc4b = nn.Linear(self.latent_size, 300)
+        self.fc3b = nn.Linear(300, 700)
+        self.fc2b = nn.Linear(700, 1500)
+        self.fc1b = nn.Linear(1500, self.input_size)
 
         return
 
     def encode(self, x):
         h1 = F.relu(self.fc1(x))
-        return self.fc21(h1), self.fc22(h1)
+        h2 = F.relu(self.fc2(h1))
+        h31 = F.relu(self.fc31(h2))
+        h32 = F.relu(self.fc32(h2))
+        return self.fc41(h31), self.fc42(h32)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
@@ -82,8 +95,10 @@ class VAE(nn.Module):
         return mu + eps*std
 
     def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        return torch.sigmoid(self.fc4(h3))
+        h3b = F.relu(self.fc4b(z))
+        h2b = F.relu(self.fc3b(h3b))
+        h1b = F.relu(self.fc2b(h2b))
+        return torch.sigmoid(self.fc1b(h1b))
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, self.input_size))

@@ -175,7 +175,7 @@ def main():
         model = OrthoAE(input_size, latent_size, beta=1.0)
 
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0.01)
 
     # -------------------
 
