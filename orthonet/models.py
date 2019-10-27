@@ -5,29 +5,33 @@ from torch.nn import functional as F
 
 from orthonet import jacob
 
-class TwoLayerAE(nn.Module):
+class AE(nn.Module):
 
-    def __init__(self, input_size, latent_size, hidden_size):
-        super(TwoLayerAE, self).__init__()
+    def __init__(self, input_size, latent_size):
+        super(AE, self).__init__()
 
         self.input_size  = input_size
         self.latent_size = latent_size
-        self.hidden_size = hidden_size
 
-        self.fc1 = nn.Linear(self.input_size, self.hidden_size)
-        self.fc2 = nn.Linear(self.hidden_size, self.latent_size)
-        self.fc3 = nn.Linear(self.latent_size, self.hidden_size)
-        self.fc4 = nn.Linear(self.hidden_size, self.input_size)
+        self.fc1 = nn.Linear(self.input_size, 400)
+        self.fc2 = nn.Linear(400, 30)
+        self.fc3 = nn.Linear(30, self.latent_size)
+
+        self.fc3b = nn.Linear(self.latent_size, 30)
+        self.fc2b = nn.Linear(30, 400)
+        self.fc1b = nn.Linear(400, self.input_size)
 
         return
 
     def encode(self, x):
         h1 = F.relu(self.fc1(x))
-        return self.fc2(h1)
+        h2 = F.relu(self.fc2(h1))
+        return self.fc3(h2)
 
     def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        return torch.sigmoid(self.fc4(h3))
+        h2b = F.relu(self.fc3b(z))
+        h1b = F.relu(self.fc2b(h2b))
+        return torch.sigmoid(self.fc1b(h1b))
 
     def forward(self, x):
         z = self.encode(x.view(-1, self.input_size))
@@ -39,32 +43,32 @@ class TwoLayerAE(nn.Module):
         return BCE
 
 
-class TwoLayerOrthoAE(TwoLayerAE):
+class OrthoAE(AE):
 
-    def __init__(self, input_size, latent_size, hidden_size, beta=10.0):
-        self.loss_fxn = jacob.JG_MSE_Loss(beta=beta)
-        super(TwoLayerOrthoAE, self).__init__(input_size, latent_size, hidden_size)
+    def __init__(self, input_size, latent_size, beta=1.0):
+        self._loss = jacob.JG_MSE_Loss(beta=beta)
+        super(OrthoAE, self).__init__(input_size, latent_size)
 
     def loss_function(self, x, recon_x):
-        return self.loss_fxn(recon_x, x.view(recon_x.shape), x.view(recon_x.shape), self)
+        return self._loss(recon_x, x.view(recon_x.shape), x.view(recon_x.shape), self)
+        #return torch.sum((recon_x - x.view(recon_x.shape))**2) # TESTING
 
 
-class TwoLayerVAE(nn.Module):
+class VAE(nn.Module):
 
-    def __init__(self, input_size, latent_size, hidden_size, beta=1.0):
-        super(TwoLayerVAE, self).__init__()
+    def __init__(self, input_size, latent_size, beta=1.0):
+        super(VAE, self).__init__()
 
         self.input_size  = input_size
         self.latent_size = latent_size
-        self.hidden_size = hidden_size
 
         self.beta = beta
 
-        self.fc1  = nn.Linear(self.input_size, self.hidden_size)
-        self.fc21 = nn.Linear(self.hidden_size, self.latent_size)
-        self.fc22 = nn.Linear(self.hidden_size, self.latent_size)
-        self.fc3  = nn.Linear(self.latent_size, self.hidden_size)
-        self.fc4  = nn.Linear(self.hidden_size, self.input_size)
+        self.fc1  = nn.Linear(self.input_size, 400)
+        self.fc21 = nn.Linear(400, self.latent_size)
+        self.fc22 = nn.Linear(400, self.latent_size)
+        self.fc3  = nn.Linear(self.latent_size, 400)
+        self.fc4  = nn.Linear(400, self.input_size)
 
         return
 
