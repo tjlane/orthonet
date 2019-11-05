@@ -47,7 +47,7 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     return J[0]
 
 
-def jacobian_grammian(fxn, x, n_outputs):
+def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     """
     Compute the Grammian matrix of the Jacobian of `fxn` at `x`.
 
@@ -65,22 +65,26 @@ def jacobian_grammian(fxn, x, n_outputs):
     Returns
     -------
     GJ : torch.Tensor
-        The normalize Jacobian-Grammian G_ij^2 / (G_ii * G_jj)
+        The Jacobian-Grammian J^T * J
     """
 
     J = jacobian(fxn, x, n_outputs)
-    J[J == float('inf')] = 0
+    #J[J == float('inf')] = 0
+    Jc = J.clamp(-2**31,2**31)
 
     n = x.size()[0]
     #assert J.shape == (n_outputs, n)
 
-    G = torch.mm(torch.transpose(J, 0, 1), J) # Jacobian Grammian (outer product)
-    h = torch.diag(G)             
-    H = torch.ger(h,h)  # H_{ij} = G_{ii}
+    G = torch.mm(torch.transpose(Jc, 0, 1), Jc) # Jacobian Grammian (outer product)
 
-    JG = G.pow(2) / (H + 1e-8)
+    if normalize:
+        h = torch.diag(G)             
+        H = torch.ger(h,h)  # H_{ij} = G_{ii}
+        JG = G.pow(2) / (H + 1e-8)
+        return JG
+    else:
+        return G
 
-    return JG
 
 
 def jg_loss(fxn, x, n_outputs, reduction='mean'):
@@ -188,7 +192,9 @@ class JG_MSE_Loss:
             The combination of the MSE and orthogonal loss.
         """
 
+        # should we use MEAN not SUM?
         mse = torch.sum((pred_y - y)**2)
+        #mse = F.binary_cross_entropy(pred_y, y.view(pred_y.shape), reduction='sum')
         ort = jg_loss(net, x, y.shape[1], reduction=self.reduction)
 
         if self.track:

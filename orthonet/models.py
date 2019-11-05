@@ -1,41 +1,37 @@
 
+import math
+
 import torch
 from torch import nn
 from torch.nn import functional as F
 
 from orthonet import jacob
 
-class AE(nn.Module):
+def unif_init(tensor):
+    stdv = 1. / math.sqrt(tensor.size(1))
+    tensor.data.uniform_(-stdv, stdv)
 
-    def __init__(self, input_size, latent_size):
+
+class AE(nn.Module):
+    def __init__(self, input_size, latent_size, tie_weights=True):
         super(AE, self).__init__()
 
         self.input_size  = input_size
         self.latent_size = latent_size
+        self.tie_weights = tie_weights
 
-        self.fc1 = nn.Linear(self.input_size, 1500)
-        self.fc2 = nn.Linear(1500, 700)
-        self.fc3 = nn.Linear(700, 300)
-        self.fc4 = nn.Linear(300, self.latent_size)
+        # TODO these should probably be exposed...
+        self.hidden_dropout_p = 0.0 
+        self.architecture = [self.input_size, 300, 300, 30, self.latent_size]
+        self.activation   = F.elu
 
-        self.fc4b = nn.Linear(self.latent_size, 300)
-        self.fc3b = nn.Linear(300, 700)
-        self.fc2b = nn.Linear(700, 1500)
-        self.fc1b = nn.Linear(1500, self.input_size)
+        self._init_params()
 
         return
 
-    def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        h2 = F.relu(self.fc2(h1))
-        h3 = F.relu(self.fc3(h2))
-        return self.fc4(h3)
-
-    def decode(self, z):
-        h3b = F.relu(self.fc4b(z))
-        h2b = F.relu(self.fc3b(h3b))
-        h1b = F.relu(self.fc2b(h2b))
-        return torch.sigmoid(self.fc1b(h1b))
+    @property
+    def n_layers(self):
+        return len(self.architecture)
 
     def forward(self, x):
         z = self.encode(x.view(-1, self.input_size))
@@ -45,6 +41,57 @@ class AE(nn.Module):
     def loss_function(x, recon_x):
         BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')
         return BCE
+
+    def _init_params(self):
+
+        self.encoder_params = []
+        self.decoder_params = []
+
+        for layer in range(self.n_layers-1):
+
+            #print(layer, self.architecture[layer], '-->', self.architecture[layer+1])
+
+            # encoder
+            p = nn.Parameter(torch.zeros(self.architecture[layer+1],
+                                         self.architecture[layer]))
+            unif_init(p)
+            setattr(self, 'param_e%d' % layer, p)
+            self.encoder_params.append(p)
+
+            # decoder
+            if not self.tie_weights:
+                p = nn.Parameter(torch.zeros(self.architecture[layer],
+                                             self.architecture[layer+1]))
+                unif_init(p)
+                setattr(self, 'param_d%d' % layer, p)
+                self.decoder_params.append(p)
+
+        return
+
+    def encode(self, x):
+        for i,p in enumerate(self.encoder_params):
+            if i == 0:
+                l = self.activation( F.linear(x, p) )
+            else:
+                l = self.activation( F.linear(l, p) )
+        return l
+
+    def decode(self, z):
+
+        if self.tie_weights:
+            params = [p.t() for p in self.encoder_params[::-1]]
+        else:
+            params = self.decoder_params[::-1]
+
+        for i,p in enumerate(params):
+            if i == 0:
+                l = self.activation( F.linear(z, p) )
+            elif i == self.n_layers-2: # hidden counts as one extra...
+                # output layer (if special)
+                l = F.sigmoid( F.linear(l, p) )
+            else:
+                l = self.activation( F.linear(l, p) )
+        return l
 
 
 class OrthoAE(AE):
@@ -68,37 +115,66 @@ class VAE(nn.Module):
 
         self.beta = beta
 
-        self.fc1  = nn.Linear(self.input_size, 1500)
-        self.fc2  = nn.Linear(1500, 700)
-        self.fc31 = nn.Linear(700, 300)
-        self.fc32 = nn.Linear(700, 300)
-        self.fc41 = nn.Linear(300, self.latent_size)
-        self.fc42 = nn.Linear(300, self.latent_size)
+        self.hidden_dropout_p = 0.0
 
-        self.fc4b = nn.Linear(self.latent_size, 300)
-        self.fc3b = nn.Linear(300, 700)
-        self.fc2b = nn.Linear(700, 1500)
-        self.fc1b = nn.Linear(1500, self.input_size)
+        self.shared = nn.Sequential(
+
+          nn.Linear(self.input_size, 700),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+
+          nn.Linear(700, 700),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU()
+          )
+
+        self.mu_branch = nn.Sequential(
+          nn.Linear(700, 300),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+
+          nn.Linear(300, self.latent_size),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU()
+          )
+
+        self.var_branch = nn.Sequential(
+          nn.Linear(700, 300),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+    
+          nn.Linear(300, self.latent_size),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU()
+          )
+
+
+        self.decode = nn.Sequential(
+          nn.Linear(self.latent_size, 300),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+
+          nn.Linear(300, 700),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+
+          nn.Linear(700, 700),
+          nn.Dropout(self.hidden_dropout_p),
+          nn.ELU(),
+
+          nn.Linear(700, self.input_size),
+          nn.Sigmoid()
+          )
 
         return
-
-    def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        h2 = F.relu(self.fc2(h1))
-        h31 = F.relu(self.fc31(h2))
-        h32 = F.relu(self.fc32(h2))
-        return self.fc41(h31), self.fc42(h32)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
         return mu + eps*std
 
-    def decode(self, z):
-        h3b = F.relu(self.fc4b(z))
-        h2b = F.relu(self.fc3b(h3b))
-        h1b = F.relu(self.fc2b(h2b))
-        return torch.sigmoid(self.fc1b(h1b))
+    def encode(self, x):
+        return self.mu_branch(self.shared(x)), self.var_branch(self.shared(x))
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, self.input_size))

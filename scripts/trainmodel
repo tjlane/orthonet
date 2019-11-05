@@ -32,8 +32,6 @@ def parse_args():
                         help='beta parameter (default: 1.0)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='enables CUDA training')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
     args = parser.parse_args()
@@ -43,7 +41,7 @@ def parse_args():
 
 def setup_device(args):
 
-    torch.manual_seed(args.seed)
+    #torch.manual_seed(1)
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     device_type = "cuda" if args.cuda else "cpu"
@@ -167,15 +165,17 @@ def main():
     input_size  = np.product(field_shape)
     latent_size = args.latent_size
 
+    print('BETA ==> %.2f' % args.beta)
+
     if args.model_type == 'ae':
         model = AE(input_size, latent_size)
     elif args.model_type == 'vae':
-        model = VAE(input_size, latent_size)
+        model = VAE(input_size, latent_size, beta=args.beta)
     elif args.model_type == 'ortho':
-        model = OrthoAE(input_size, latent_size, beta=1.0)
+        model = OrthoAE(input_size, latent_size, beta=args.beta)
 
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # -------------------
 
@@ -198,12 +198,13 @@ def main():
     with torch.no_grad():
 
         # traverse each latent dimension
+        n_latent_samples = 12 * 4
         for a in range(args.latent_size):
-            sample = np.zeros((12, args.latent_size), dtype=np.float32)
-            sample[:,a] = np.linspace(-2, 2, 12)
+            sample = np.zeros((n_latent_samples, args.latent_size), dtype=np.float32)
+            sample[:,a] = np.linspace(-2, 2, n_latent_samples)
             sample = torch.from_numpy(sample).to(device)
             sample = model.decode(sample).cpu()
-            save_image(sample.view(12, 1, *field_shape),
+            save_image(sample.view(n_latent_samples, 1, *field_shape),
                        'results/z' + str(a) + '.png')
 
         # embed all the data into the latent space and save
