@@ -10,7 +10,7 @@ import torch.utils.data
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from orthonet.models import VAE, AE, OrthoAE
+from orthonet.models import VAE, AE, OrthoAE, OpenDataParallel
 from orthonet import visual
 from orthonet.utils import binary_normalize
 
@@ -56,8 +56,10 @@ def setup_device(args):
 def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
     f = h5py.File(data_file)
-    data = binary_normalize( np.array(f['data']).astype(np.float32) )
+    #data = binary_normalize( np.array(f['data']).astype(np.float32) )
+    data = np.array(f['data']).astype(np.float32) # are now binary
     #data = data[:10] # FOR TESTING
+    print('shp:', data.shape)
     f.close()
 
     split = int(data.shape[0] * traintest_split)
@@ -174,8 +176,14 @@ def main():
     elif args.model_type == 'ortho':
         model = OrthoAE(input_size, latent_size, beta=args.beta)
 
+    #if torch.cuda.device_count() > 1:
+    #    n_to_use = 4
+    #    device_ids = range(0,n_to_use)
+    #    print("Using:", n_to_use, 'of', torch.cuda.device_count(), "GPUs")
+    #    #model = OpenDataParallel(model, device_ids=device_ids, output_device=0)
+    #    model = OpenDataParallel(model)
+
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # -------------------
 
@@ -183,6 +191,9 @@ def main():
     train_loss = np.zeros(args.epochs)
 
     for epoch in range(1, args.epochs + 1):
+
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3/epoch)
 
         test_loss[epoch-1]  = train(epoch, device, train_loader, model, optimizer, args.log_interval)
         train_loss[epoch-1] = test(epoch,  device, test_loader,  model, args.log_interval)

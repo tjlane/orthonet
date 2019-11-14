@@ -1,4 +1,5 @@
 
+
 import math
 
 import torch
@@ -7,31 +8,164 @@ from torch.nn import functional as F
 
 from orthonet import jacob
 
+
 def unif_init(tensor):
     stdv = 1. / math.sqrt(tensor.size(1))
     tensor.data.uniform_(-stdv, stdv)
 
 
+class OpenDataParallel(nn.DataParallel):
+    """
+    DataParallel hides the module's methods to avoid name conflicts
+    This class simply exposes a few key methods from the base classes
+    """
+
+    def encode(self, arg):
+        return self.module.encode(arg)
+
+    def decode(self, arg):
+        return self.module.decode(arg)
+
+    def loss_function(self, *args):
+        return self.module.loss_function(*args)
+
+
+
+class ResFC(nn.Module):
+    """
+    A fully connected two-stage residual layer, with the following goodies:
+        * batchnorm
+        * dropout
+        * uses a linear (affine) transform to line up mismatched input/output
+          dimensions
+    """
+    def __init__(self, in_size, out_size, activation=F.relu, dropout_p=0.5):
+        super(ResFC, self).__init__()
+
+        self.in_size  = in_size
+        self.out_size = out_size
+        self.activation = activation
+        self.dropout_p  = dropout_p
+
+        self.t1 = nn.Linear(self.in_size, self.out_size, bias=False)
+        self.t2 = nn.Linear(self.out_size, self.out_size, bias=False)
+        self.bn = nn.BatchNorm1d(self.out_size)
+        self.dp = nn.Dropout(p=dropout_p, inplace=False)
+
+        if self.in_size != self.out_size:
+            self.affine = nn.Linear(self.in_size, self.out_size, bias=False)
+        else:
+            self.affine = nn.Identity()
+
+        return
+
+    def forward(self, x):
+        r  = self.affine(x)
+        Fx = self.t2(self.activation(self.t1(x)))
+        nm = self.bn(Fx + r)
+        z  = self.dp(nm)
+        return z
+
+
+class SigmoidOutput(nn.Module):
+    def __init__(self, in_size, out_size):
+        super(SigmoidOutput, self).__init__()
+        self.linear = nn.Linear(in_size, out_size, bias=True)
+
+    def forward(self, x):
+        return torch.sigmoid(self.linear(x))
+
+
 class AE(nn.Module):
-    def __init__(self, input_size, latent_size, tie_weights=True):
+    def __init__(self, input_size, latent_size):
         super(AE, self).__init__()
 
         self.input_size  = input_size
         self.latent_size = latent_size
-        self.tie_weights = tie_weights
 
-        # TODO these should probably be exposed...
-        self.hidden_dropout_p = 0.0 
-        self.architecture = [self.input_size, 300, 300, 30, self.latent_size]
-        self.activation   = F.elu
+        self.encode_conv = nn.Sequential(
+                            # input size is 1 x 33 x 33
+                            nn.Conv2d(1, 4, 4, stride=2, padding=4, bias=False),
+                            nn.LeakyReLU(0.2, inplace=True),
 
-        self._init_params()
+                            # current size is 4 x 16 x 16
+                            nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 16 x 8 x 8
+                            nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 32 x 4 x 4
+                            nn.Conv2d(32, 64, 4, stride=2, padding=0, bias=False),
+                            nn.BatchNorm2d(64),
+                            nn.LeakyReLU(0.2, inplace=True)
+                            # --> into FC is 64 x 1 x 1
+                          )
+        self.encode_fc  = nn.Sequential(
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64),
+
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+
+        self.decode_fc   = nn.Sequential(
+                            nn.Linear(self.latent_size, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64),
+
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64)
+                          )
+        self.decode_conv = nn.Sequential(
+
+                            # input is 64 x 1 x 1
+                            nn.ConvTranspose2d(64, 32, 4, stride=1, padding=0, bias=False),
+                            nn.BatchNorm2d(32),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 32 x 4 x 4
+                            nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 16 x 8 x 8
+                            nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(8),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 8 x 4 x 4
+                            nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.ConvTranspose2d(4, 1, 4, stride=1, padding=1, bias=False),
+                            nn.Sigmoid()
+                        )
 
         return
 
-    @property
-    def n_layers(self):
-        return len(self.architecture)
+    def encode(self, x):
+        conv_out = self.encode_conv(x.view(-1,1,33,33))
+        conv_out_flat = conv_out.squeeze()
+        return self.encode_fc(conv_out_flat)
+
+    def decode(self, z):
+        fc_out = self.decode_fc(z)
+        fc_out_expand = fc_out.unsqueeze(-1).unsqueeze(-1)
+        conv_out = self.decode_conv(fc_out_expand)
+        return conv_out.squeeze()
 
     def forward(self, x):
         z = self.encode(x.view(-1, self.input_size))
@@ -42,67 +176,16 @@ class AE(nn.Module):
         BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')
         return BCE
 
-    def _init_params(self):
-
-        self.encoder_params = []
-        self.decoder_params = []
-
-        for layer in range(self.n_layers-1):
-
-            #print(layer, self.architecture[layer], '-->', self.architecture[layer+1])
-
-            # encoder
-            p = nn.Parameter(torch.zeros(self.architecture[layer+1],
-                                         self.architecture[layer]))
-            unif_init(p)
-            setattr(self, 'param_e%d' % layer, p)
-            self.encoder_params.append(p)
-
-            # decoder
-            if not self.tie_weights:
-                p = nn.Parameter(torch.zeros(self.architecture[layer],
-                                             self.architecture[layer+1]))
-                unif_init(p)
-                setattr(self, 'param_d%d' % layer, p)
-                self.decoder_params.append(p)
-
-        return
-
-    def encode(self, x):
-        for i,p in enumerate(self.encoder_params):
-            if i == 0:
-                l = self.activation( F.linear(x, p) )
-            else:
-                l = self.activation( F.linear(l, p) )
-        return l
-
-    def decode(self, z):
-
-        if self.tie_weights:
-            params = [p.t() for p in self.encoder_params[::-1]]
-        else:
-            params = self.decoder_params[::-1]
-
-        for i,p in enumerate(params):
-            if i == 0:
-                l = self.activation( F.linear(z, p) )
-            elif i == self.n_layers-2: # hidden counts as one extra...
-                # output layer (if special)
-                l = F.sigmoid( F.linear(l, p) )
-            else:
-                l = self.activation( F.linear(l, p) )
-        return l
 
 
 class OrthoAE(AE):
 
     def __init__(self, input_size, latent_size, beta=1.0):
-        self._loss = jacob.JG_MSE_Loss(beta=beta)
         super(OrthoAE, self).__init__(input_size, latent_size)
+        self._loss = jacob.JG_MSE_Loss(beta=beta)
 
     def loss_function(self, x, recon_x):
         return self._loss(recon_x, x.view(recon_x.shape), x.view(recon_x.shape), self)
-        #return torch.sum((recon_x - x.view(recon_x.shape))**2) # TESTING
 
 
 class VAE(nn.Module):
@@ -115,56 +198,91 @@ class VAE(nn.Module):
 
         self.beta = beta
 
-        self.hidden_dropout_p = 0.0
+        # encoder
+        self.shared     = nn.Sequential(
+                            # input size is 1 x 33 x 33
+                            nn.Conv2d(1, 4, 4, stride=2, padding=4, bias=False),
+                            nn.LeakyReLU(0.2, inplace=True),
 
-        self.shared = nn.Sequential(
+                            # current size is 4 x 16 x 16
+                            nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16),
+                            nn.LeakyReLU(0.2, inplace=True),
 
-          nn.Linear(self.input_size, 700),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
+                            # current size is 16 x 8 x 8
+                            nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32),
+                            nn.LeakyReLU(0.2, inplace=True),
 
-          nn.Linear(700, 700),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU()
-          )
+                            # current size is 32 x 4 x 4
+                            nn.Conv2d(32, 64, 4, stride=2, padding=0, bias=False),
+                            nn.BatchNorm2d(64),
+                            nn.LeakyReLU(0.2, inplace=True)
+                            # --> into FC is 64 x 1 x 1
+                          )
+        self.mu_branch  = nn.Sequential(
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64),
 
-        self.mu_branch = nn.Sequential(
-          nn.Linear(700, 300),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
-
-          nn.Linear(300, self.latent_size),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU()
-          )
-
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
         self.var_branch = nn.Sequential(
-          nn.Linear(700, 300),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
-    
-          nn.Linear(300, self.latent_size),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU()
-          )
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64),
+
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
 
 
-        self.decode = nn.Sequential(
-          nn.Linear(self.latent_size, 300),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
+        # decoder
+        self.decode_fc   = nn.Sequential(
+                            nn.Linear(self.latent_size, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64),
 
-          nn.Linear(300, 700),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.BatchNorm1d(64)
+                          )
+        self.decode_conv = nn.Sequential(
 
-          nn.Linear(700, 700),
-          nn.Dropout(self.hidden_dropout_p),
-          nn.ELU(),
-
-          nn.Linear(700, self.input_size),
-          nn.Sigmoid()
-          )
+                            # input is 64 x 1 x 1
+                            nn.ConvTranspose2d(64, 32, 4, stride=1, padding=0, bias=False),
+                            nn.BatchNorm2d(32),
+                            nn.LeakyReLU(0.2, inplace=True),
+                    
+                            # size 32 x 4 x 4
+                            nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16),
+                            nn.LeakyReLU(0.2, inplace=True),
+                    
+                            # size 16 x 8 x 8
+                            nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(8),
+                            nn.LeakyReLU(0.2, inplace=True),
+                    
+                            # size 8 x 4 x 4
+                            nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
+                            nn.ReLU(True),
+                            nn.ConvTranspose2d(4, 1, 4, stride=1, padding=1, bias=False),
+                            nn.Sigmoid()
+                        )
 
         return
 
@@ -174,7 +292,15 @@ class VAE(nn.Module):
         return mu + eps*std
 
     def encode(self, x):
-        return self.mu_branch(self.shared(x)), self.var_branch(self.shared(x))
+        conv_out = self.shared(x.view(-1,1,33,33))
+        conv_out_flat = conv_out.squeeze()
+        return self.mu_branch(conv_out_flat), self.var_branch(conv_out_flat)
+
+    def decode(self, z):
+        fc_out = self.decode_fc(z)
+        fc_out_expand = fc_out.unsqueeze(-1).unsqueeze(-1)
+        conv_out = self.decode_conv(fc_out_expand)
+        return conv_out.squeeze()
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, self.input_size))

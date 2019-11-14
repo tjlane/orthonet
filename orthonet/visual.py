@@ -16,6 +16,7 @@ def plot_loss_curves(train_loss, test_loss, save=False):
     plt.ylabel('Loss')
     plt.legend(['train', 'test'])
     plt.grid()
+    plt.yscale('log')
     
     if save:
         plt.savefig(save)
