@@ -13,7 +13,7 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     fxn : function
         The pytorch function (e.g. neural network object)
 
-    x : torch.Variable
+    x : torch.Tensor
         The input point at which to evaluate J
 
     n_outputs : int
@@ -30,17 +30,24 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     # output... this allows us to compute J with pytorch's
     # jacobian-vector engine
 
-    xr = x.squeeze() # duplicate to avoid any possible in-place issues
-    n = x.size()[0]
-    xr = x.repeat(n_outputs, 1)
+    # expand the input, one copy per output dimension
+    repear_arg = (n_outputs,) + (1,) * len(x.size())
+    xr = x.repeat(*repear_arg)
     xr.requires_grad_(True)
 
-    y = fxn(xr)
+    # both y and I are shape (n_outputs, n_outputs)
+    #  checking y shape lets us report something meaningful
+    y = fxn(xr).view(n_outputs, -1)
+    if y.size(1) != n_outputs: 
+        raise ValueError('Function `fxn` does not give output '
+                         'compatible with `n_outputs`=%d, size '
+                         'of fxn(x) : %s' 
+                         '' % (n_outputs, y.size(1)))
     I = torch.eye(n_outputs, device=xr.device)
 
     J = autograd.grad(y, xr,
-                      grad_outputs=I, 
-                      retain_graph=retain_graph, 
+                      grad_outputs=I,
+                      retain_graph=retain_graph,
                       create_graph=True,  # for higher order derivatives
                       )
 
@@ -69,8 +76,7 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     """
 
     J = jacobian(fxn, x, n_outputs)
-    #J[J == float('inf')] = 0
-    Jc = J.clamp(-2**31,2**31)
+    Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     n = x.size()[0]
     #assert J.shape == (n_outputs, n)
@@ -87,7 +93,7 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
 
 
 
-def jg_loss(fxn, x, n_outputs, reduction='mean'):
+def jg_loss(fxn, x, n_outputs, reduction='mean', diagonal_weight=1.0):
     """
     Compute the aggregated Jacobian-Grammian loss over a dataset `x` under
     model `fxn`.
@@ -106,6 +112,10 @@ def jg_loss(fxn, x, n_outputs, reduction='mean'):
     reduction : str
         Either 'mean' or 'sum', just changes the normalization.
 
+    diagonal_weight : float
+        How much to weight the diagonal (self) values of the
+        Jacobian Grammian
+
     Returns
     ------- 
     loss : float
@@ -116,7 +126,10 @@ def jg_loss(fxn, x, n_outputs, reduction='mean'):
 
     loss = 0.0
     for i in range(x.shape[0]):
-        loss += torch.sum(jacobian_grammian(fxn, x[i], n_outputs))
+        jg = jacobian_grammian(fxn, x[i], n_outputs)
+        loss += jg.abs().sum() 
+        if diagonal_weight != 1.0:
+            loss += (diagonal_weight - 1.0) * jg.diag().sum()
 
     loss = loss / float(x.shape[1])
 
@@ -125,7 +138,7 @@ def jg_loss(fxn, x, n_outputs, reduction='mean'):
     elif reduction == 'sum':
         pass
     else:
-        raise ValueError('reduction must be {"sum", "mean"]')
+        raise ValueError('reduction must be {"sum", "mean"}')
 
     return loss
 

@@ -35,16 +35,17 @@ print('\n\n >>>>>> DCGAN >>>>>>')
 ######################################################################
 # Inputs
 
-dataroot   = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/celeba"
-workers    = 16
-batch_size = 128
-image_size = 64
-nc         = 3
-ngf        = 64
-ndf        = 64
-lr         = 0.0002
-beta1      = 0.5
-ngpu       = 8
+dataroot    = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef"
+workers     = 16
+batch_size  = 128
+image_size  = 64
+nc          = 1
+ngf         = 64
+ndf         = 64
+lr          = 0.0002
+beta1       = 0.5
+noise_level = 0.1
+ngpu        = 8
 
 nz         = int(sys.argv[-3])
 ortho_beta = float(sys.argv[-2])
@@ -59,7 +60,7 @@ print('')
 
 
 # decide on a place to put results
-bas_dir    = '/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/celeba/models'
+bas_dir    = '/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef/models'
 res_dir    = 'nz%d_ortho%.2f_epoch%d' % (nz, ortho_beta, num_epochs)
 out_dir    = os.path.join(bas_dir, res_dir)
 if os.path.exists(out_dir):
@@ -73,8 +74,9 @@ dataset = dset.ImageFolder(root=dataroot,
                            transform=transforms.Compose([
                                transforms.Resize(image_size),
                                transforms.CenterCrop(image_size),
+                               transforms.Grayscale(),
                                transforms.ToTensor(),
-                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                               transforms.Normalize((0.5,), (0.5,)),
                            ]))
 
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
@@ -207,8 +209,13 @@ for epoch in range(num_epochs):
         netD.zero_grad()
         # Format batch
         real_cpu = data[0].to(device)
+
+        # soft, noisy labels
         b_size = real_cpu.size(0)
-        label = torch.full((b_size,), real_label, device=device)
+        label = torch.full((b_size,), real_label)
+        label += torch.randn(*label.shape) * noise_level
+        label = label.clamp(0,1).to(device)
+
         # Forward pass real batch through D
         output = netD(real_cpu).view(-1)
         # Calculate loss on all-real batch
@@ -280,7 +287,7 @@ for epoch in range(num_epochs):
 ######################################################################
 # Save the models
 
-params_dir - os.path.join(out_dir, 'params')
+params_dir = os.path.join(out_dir, 'params')
 if not os.path.exists(params_dir):
     os.mkdir(params_dir)
 
@@ -356,7 +363,8 @@ with torch.no_grad():
         lfn = os.path.join(latent_dir, 'dz_%d.png' % iz)
         plt.savefig(lfn)
         print(' --> saving: %s' % lfn)
-    
+        plt.close()
+
         dz[:,iz,0,0] = 0.0
 
 print('... done')
