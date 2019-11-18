@@ -9,12 +9,20 @@ def plot_loss_curves(train_loss, test_loss, save=False):
     """
     
     plt.figure()
-    
-    plt.plot(train_loss, lw=2)
+
+    if train_loss.shape[0] == 1:    
+        plt.plot(train_loss, lw=2)
+        legend_label = ['train', 'test']
+    elif train_loss.shape[0] == 3:
+        plt.plot(train_loss[0], lw=2)
+        plt.plot(train_loss[0], lw=2)
+        plt.plot(train_loss[0], lw=2)
+        legend_label = ['train', 'bce', 'jacob', 'test']
+
     plt.plot(test_loss, lw=2)
     plt.xlabel('epoch')
     plt.ylabel('Loss')
-    plt.legend(['train', 'test'])
+    plt.legend(legend_label)
     plt.grid()
     plt.yscale('log')
     

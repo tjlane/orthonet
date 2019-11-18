@@ -31,6 +31,7 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     # jacobian-vector engine
 
     # expand the input, one copy per output dimension
+    n_outputs = int(n_outputs)
     repear_arg = (n_outputs,) + (1,) * len(x.size())
     xr = x.repeat(*repear_arg)
     xr.requires_grad_(True)
@@ -72,7 +73,7 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     Returns
     -------
     GJ : torch.Tensor
-        The Jacobian-Grammian J^T * J
+        The Jacobian-Grammian J^T * J ( size n x n, n=size(flat(x))) )
     """
 
     J = jacobian(fxn, x, n_outputs)
@@ -124,17 +125,16 @@ def jg_loss(fxn, x, n_outputs, reduction='mean', diagonal_weight=1.0):
 
     assert len(x.shape) == 2 # should be points x dims
 
-    loss = 0.0
-    for i in range(x.shape[0]):
-        jg = jacobian_grammian(fxn, x[i], n_outputs)
-        loss += jg.abs().sum() 
-        if diagonal_weight != 1.0:
-            loss += (diagonal_weight - 1.0) * jg.diag().sum()
+    jg_accum = torch.zeros(x.size(1), x.size(1), device=x.device) 
+    for i in range(x.size(0)):
+        jg_accum += jacobian_grammian(fxn, x[i], n_outputs)
 
-    loss = loss / float(x.shape[1])
+    jg2 = jg_accum.pow(2) 
+    loss = jg2.sum() + (diagonal_weight - 1.0) * jg2.diag().sum()
+    loss = torch.sqrt(loss) / float(x.size(1) ** 2)
 
     if reduction == 'mean':
-        loss = loss / float(x.shape[0])
+        loss = loss / float(x.size(0))
     elif reduction == 'sum':
         pass
     else:

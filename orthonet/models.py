@@ -178,16 +178,6 @@ class AE(nn.Module):
 
 
 
-class OrthoAE(AE):
-
-    def __init__(self, input_size, latent_size, beta=1.0):
-        super(OrthoAE, self).__init__(input_size, latent_size)
-        self._loss = jacob.JG_MSE_Loss(beta=beta)
-
-    def loss_function(self, x, recon_x):
-        return self._loss(recon_x, x.view(recon_x.shape), x.view(recon_x.shape), self)
-
-
 class VAE(nn.Module):
 
     def __init__(self, input_size, latent_size, beta=1.0):
@@ -297,6 +287,8 @@ class VAE(nn.Module):
         return self.mu_branch(conv_out_flat), self.var_branch(conv_out_flat)
 
     def decode(self, z):
+        if type(z) is tuple:
+            z = z[0]
         fc_out = self.decode_fc(z)
         fc_out_expand = fc_out.unsqueeze(-1).unsqueeze(-1)
         conv_out = self.decode_conv(fc_out_expand)
@@ -305,7 +297,7 @@ class VAE(nn.Module):
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, self.input_size))
         z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
+        return self.decode(z)
 
     def loss_function(self, x, recon_x, mu, logvar):
         BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')
