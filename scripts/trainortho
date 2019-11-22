@@ -18,10 +18,10 @@ from orthonet import jacob
 from orthonet.utils import binary_normalize
 
 
-torch.manual_seed(0)
-np.random.seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+#torch.manual_seed(0)
+#np.random.seed(0)
+#torch.backends.cudnn.deterministic = True
+#torch.backends.cudnn.benchmark = False
 
 def parse_args():
 
@@ -42,6 +42,8 @@ def parse_args():
                         help='ortho beta parameter (default: 1.0)')
     parser.add_argument('--dbeta', type=float, default=1.0, metavar='N',
                         help='diagn beta parameter (default: 1.0)')
+    parser.add_argument('--no-jac', action='store_true', default=False,
+                        help='hard disable of jacobian computation')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='enables CUDA training')
     args = parser.parse_args()
@@ -50,7 +52,6 @@ def parse_args():
 
 
 def setup_device(args):
-
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     device_type = "cuda" if args.cuda else "cpu"
@@ -66,8 +67,8 @@ def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
     f = h5py.File(data_file, 'r', libver='latest', swmr=True)
     data = np.array(f['data']).astype(np.float32) # are now binary
-    data = data[:128]
-    #data = data[:24800]
+    #data = data[:128]
+    data = data[:24800]
     print('shp:', data.shape)
     f.close()
 
@@ -109,9 +110,12 @@ def fwd_pass(model, data):
 
     bce = F.binary_cross_entropy(y, data.view(y.shape), reduction='sum')
 
-    jgl = model.ortho_beta * jacob.jg_loss(model.decode, z, model.input_size,
-                                           diagonal_weight=model.diagn_beta,
-                                           reduction='sum')
+    if NO_JAC:
+        jgl = torch.tensor(0.0)
+    else:
+        jgl = model.ortho_beta * jacob.jg_loss(model.decode, z, model.input_size,
+                                               diagonal_weight=model.diagn_beta,
+                                               reduction='sum')
 
     return bce, jgl, z, y
 
@@ -196,6 +200,13 @@ def test(epoch, test_loader, model):
 def main():
 
     args = parse_args()
+
+    print('VAE   beta --> ', args.vaebeta)
+    print('ortho beta --> ', args.obeta)
+    print('diagn beta --> ', args.dbeta)
+
+    global NO_JAC
+    NO_JAC = args.no_jac
 
     global device
     device, loader_kwargs = setup_device(args)
