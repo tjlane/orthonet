@@ -15,8 +15,9 @@ setup(
     url='https://github.com/tjlane/orthonet',
 
     # Packages and depencies
-    packages=['orthonet'],
-    package_dir={'orthonet': 'orthonet'},
+    packages=['orthonet', 'orthonet.temsim'],
+    package_dir={'orthonet': 'orthonet',
+                 'orthonet.temsim' : 'orthonet/temsim'},
     install_requires=[
         'numpy',
         'torch'
