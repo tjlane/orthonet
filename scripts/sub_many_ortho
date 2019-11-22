@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+
+import os
+import subprocess
+
+obetas = [0.0, 1e-13, 1e-12, 1e-11, 1e-9]
+dbetas = [0.0, 0.01, 0.1, 1.0, 10.0]
+
+for obeta in obetas:
+    for dbeta in dbetas:
+        print('obeta=%.2e, dbeta=%.2f' % (obeta, dbeta))
+
+        logfile = 'log_o%.2e_d%.2e.txt' % (obeta, dbeta)
+
+        sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
+        "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type ae --epochs 25 --obeta %.2e --dbeta %.2e >& %s" % (obeta, dbeta, logfile)
+
+        cmd = 'bsub -q slacgpu -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+
+        print('>>', cmd)
+        subprocess.call(cmd, shell=True)
+
+
