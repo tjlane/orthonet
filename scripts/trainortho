@@ -4,6 +4,7 @@ import os
 import h5py
 import argparse
 import numpy as np
+from os.path import join as pjoin
 
 import torch
 import torch.utils.data
@@ -16,6 +17,11 @@ from orthonet import visual
 from orthonet import jacob
 from orthonet.utils import binary_normalize
 
+
+torch.manual_seed(0)
+np.random.seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 def parse_args():
 
@@ -45,7 +51,6 @@ def parse_args():
 
 def setup_device(args):
 
-    #torch.manual_seed(1)
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     device_type = "cuda" if args.cuda else "cpu"
@@ -59,9 +64,10 @@ def setup_device(args):
 
 def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
-    f = h5py.File(data_file)
+    f = h5py.File(data_file, 'r', libver='latest', swmr=True)
     data = np.array(f['data']).astype(np.float32) # are now binary
-    data = data[:100] # FOR TESTING
+    data = data[:128]
+    #data = data[:24800]
     print('shp:', data.shape)
     f.close()
 
@@ -92,7 +98,7 @@ def save_comparison(epoch, x, y, batch_size):
     comparison = torch.cat([x.view(*comp_shp)[:n],
                             y.view(*comp_shp)[:n]])
     save_image(comparison.cpu(),
-               'results/reconstructions/reconstruction_%d.png' % epoch, nrow=n)
+               pjoin(resdir, 'reconstructions/reconstruction_%d.png' % epoch), nrow=n)
     return
 
 
@@ -101,20 +107,18 @@ def fwd_pass(model, data):
     z = model.encode(data)
     y = model.decode(z)
 
-    # enables flexible model code
-    #if type(y) is not tuple:
-    #    y = (y,)
-
     bce = F.binary_cross_entropy(y, data.view(y.shape), reduction='sum')
+
     jgl = model.ortho_beta * jacob.jg_loss(model.decode, z, model.input_size,
                                            diagonal_weight=model.diagn_beta,
                                            reduction='sum')
+
     return bce, jgl, z, y
 
 
 def train(epoch, train_loader, model):
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3/epoch)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
     model.train()
     train_loss = 0.0
@@ -123,6 +127,9 @@ def train(epoch, train_loader, model):
 
     for batch_idx, (data,) in enumerate(train_loader):
 
+        p1 = [p.view(-1,1).clone() for p in model.parameters()]
+
+
         data = data.to(device)
         bce, jgl, _, _ = fwd_pass(model, data)
 
@@ -130,18 +137,21 @@ def train(epoch, train_loader, model):
         jgl_loss += jgl.item()
         train_loss += bce.item() + jgl.item()
 
+        loss = bce + jgl # TODO
+
         optimizer.zero_grad()
-        bce.backward(retain_graph=True)
-        jgl.backward(retain_graph=True)
+        loss.backward()
         optimizer.step()
 
         if batch_idx % 10 == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f} | BCE: {:.2e} | JAC: {:.2e}'.format(
+                epoch, 
+                batch_idx * len(data), 
+                len(train_loader.dataset),
                 100. * batch_idx / len(train_loader),
-                bce.item() / len(data)))
-            print('             BCE: {:.2e} / JAC: {:.2e}'.format(
-                  bce_loss, jgl_loss))
+                loss / len(data),
+                bce.item() / len(data), 
+                jgl.item() / len(data) ))
 
     avg_loss = train_loss / len(train_loader.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
@@ -156,7 +166,9 @@ def train(epoch, train_loader, model):
 def test(epoch, test_loader, model):
 
     model.eval()
-    test_loss = 0
+    test_loss = 0.0
+    test_bce  = 0.0
+    test_jgl  = 0.0
 
     with torch.no_grad():
 
@@ -164,14 +176,19 @@ def test(epoch, test_loader, model):
 
             data = data.to(device)
             bce, jgl, z, y = fwd_pass(model, data)
+
+            test_bce += bce.item()
+            test_jgl += jgl.item()
             test_loss += bce.item() + jgl.item()
 
-            # save a comparison between the data and reconstruction
-            if i == 0:
-                save_comparison(epoch, data, y, test_loader.batch_size) 
+        save_comparison(epoch, data, y, test_loader.batch_size) 
 
     test_loss /= len(test_loader.dataset)
-    print('====> Test set loss: {:.4f}'.format(test_loss))
+    print('====> Test set loss: {:.4f} | BCE: {:.2e} | JAC: {:.2e}'.format(
+           test_loss, 
+           test_bce / len(test_loader.dataset),
+           test_jgl / len(test_loader.dataset) ))
+
 
     return test_loss
 
@@ -187,7 +204,12 @@ def main():
                                                       args.batch_size, 
                                                       loader_kwargs=loader_kwargs)
 
-    for dirc in ['results', 'results/reconstructions', 'results/samples']:
+    global resdir
+    resdir = 'ortho_%s_ob%.2e_db%.2e' % (args.model_type, args.obeta, args.dbeta)
+    for dirc in [resdir, 
+                 pjoin(resdir, 'reconstructions'), 
+                 pjoin(resdir, 'samples'),
+                 pjoin(resdir, 'checkpoints')]:
         if not os.path.exists(dirc):
             os.mkdir(dirc)
 
@@ -224,7 +246,11 @@ def main():
     for epoch in range(1, args.epochs + 1):
 
         train_loss[epoch-1,:]  = train(epoch, train_loader, model)
+        torch.save(model, pjoin(resdir, 'model_train.pt')) # todo
         test_loss[epoch-1]     = test(epoch, test_loader,  model)
+        torch.save(model, pjoin(resdir, 'model_test.pt')) # todo
+
+        torch.save(model, pjoin(resdir, 'checkpoints/model_%d.pt' % epoch))
 
         with torch.no_grad():
 
@@ -232,7 +258,7 @@ def main():
             sample = torch.randn(64, args.latent_size).to(device)
             sample = model.decode(sample).cpu()
             save_image(sample.view(64, 1, *field_shape),
-                       'results/samples/sample_%d.png' % epoch)
+                       pjoin(resdir, 'samples/sample_%d.png' % epoch))
 
     with torch.no_grad():
 
@@ -244,12 +270,13 @@ def main():
             sample = torch.from_numpy(sample).to(device)
             sample = model.decode(sample).cpu()
             save_image(sample.view(n_latent_samples, 1, *field_shape),
-                       'results/z' + str(a) + '.png')
+                       pjoin(resdir, 'z' + str(a) + '.png'))
 
         # save the final model
-        torch.save(model.cpu(), 'results/model.pt')
+        torch.save(model.cpu(), pjoin(resdir, 'model.pt'))
 
-    visual.plot_loss_curves(test_loss, train_loss, save='results/loss_curves.png')
+    visual.plot_loss_curves(train_loss, test_loss, 
+                            save=pjoin(resdir, 'loss_curves.png'))
 
     return
 

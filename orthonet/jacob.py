@@ -39,6 +39,7 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     # both y and I are shape (n_outputs, n_outputs)
     #  checking y shape lets us report something meaningful
     y = fxn(xr).view(n_outputs, -1)
+
     if y.size(1) != n_outputs: 
         raise ValueError('Function `fxn` does not give output '
                          'compatible with `n_outputs`=%d, size '

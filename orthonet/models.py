@@ -77,6 +77,16 @@ class SigmoidOutput(nn.Module):
 
 
 class AE(nn.Module):
+
+    # A NOTE about BatchNorm track_running_stats
+    # somehow use of the autograd function, completely outside of the model,
+    # messes with the running stats in the batchnorm layers -- still a bit
+    # mysterious, but documenting current understanding here:
+    # >> when model is in eval() mode AND jacob.jacobian has been called
+    # >> even if unused, it will cause large changes to the batchnorm stats
+    # ~~ crazy, keeping the running stats off for now....
+    # -- tjl Nov 21, 2019
+
     def __init__(self, input_size, latent_size):
         super(AE, self).__init__()
 
@@ -90,17 +100,17 @@ class AE(nn.Module):
 
                             # current size is 4 x 16 x 16
                             nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(16),
+                            nn.BatchNorm2d(16, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
 
                             # current size is 16 x 8 x 8
                             nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(32),
+                            nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
 
                             # current size is 32 x 4 x 4
                             nn.Conv2d(32, 64, 4, stride=2, padding=0, bias=False),
-                            nn.BatchNorm2d(64),
+                            nn.BatchNorm2d(64, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True)
                             # --> into FC is 64 x 1 x 1
                           )
@@ -109,7 +119,7 @@ class AE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64),
+                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
@@ -122,29 +132,29 @@ class AE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64),
+                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64)
+                            nn.BatchNorm1d(64, track_running_stats=False),
                           )
         self.decode_conv = nn.Sequential(
 
                             # input is 64 x 1 x 1
                             nn.ConvTranspose2d(64, 32, 4, stride=1, padding=0, bias=False),
-                            nn.BatchNorm2d(32),
+                            nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
 
                             # size 32 x 4 x 4
                             nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(16),
+                            nn.BatchNorm2d(16, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
 
                             # size 16 x 8 x 8
                             nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(8),
+                            nn.BatchNorm2d(8, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
 
                             # size 8 x 4 x 4
@@ -281,10 +291,13 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps*std
 
-    def encode(self, x):
+    def encode(self, x, ret_var=False):
         conv_out = self.shared(x.view(-1,1,33,33))
         conv_out_flat = conv_out.squeeze()
-        return self.mu_branch(conv_out_flat), self.var_branch(conv_out_flat)
+        if ret_var:
+            return self.mu_branch(conv_out_flat), self.var_branch(conv_out_flat)
+        else:
+            return self.mu_branch(conv_out_flat)
 
     def decode(self, z):
         if type(z) is tuple:
@@ -295,9 +308,9 @@ class VAE(nn.Module):
         return conv_out.squeeze()
 
     def forward(self, x):
-        mu, logvar = self.encode(x.view(-1, self.input_size))
+        mu, logvar = self.encode(x.view(-1, self.input_size), ret_var=True)
         z = self.reparameterize(mu, logvar)
-        return self.decode(z)
+        return self.decode(z), mu, logvar
 
     def loss_function(self, x, recon_x, mu, logvar):
         BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')

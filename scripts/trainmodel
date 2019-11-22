@@ -10,7 +10,7 @@ import torch.utils.data
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from orthonet.models import VAE, AE, OrthoAE, OpenDataParallel
+from orthonet.models import VAE, AE, OpenDataParallel
 from orthonet import visual
 from orthonet.utils import binary_normalize
 
@@ -55,10 +55,11 @@ def setup_device(args):
 
 def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
-    f = h5py.File(data_file)
+    f = h5py.File(data_file, 'r', libver='latest', swmr=True)
     #data = binary_normalize( np.array(f['data']).astype(np.float32) )
     data = np.array(f['data']).astype(np.float32) # are now binary
-    #data = data[:10] # FOR TESTING
+    data = data[:24800]
+    #data = data[:1280] # FOR TESTING
     print('shp:', data.shape)
     f.close()
 

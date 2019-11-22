@@ -10,14 +10,16 @@ def plot_loss_curves(train_loss, test_loss, save=False):
     
     plt.figure()
 
-    if train_loss.shape[0] == 1:    
+    if len(train_loss.shape) == 1:
         plt.plot(train_loss, lw=2)
         legend_label = ['train', 'test']
-    elif train_loss.shape[0] == 3:
-        plt.plot(train_loss[0], lw=2)
-        plt.plot(train_loss[0], lw=2)
-        plt.plot(train_loss[0], lw=2)
+    elif train_loss.shape[1] == 3:
+        plt.plot(train_loss[:,0], lw=2)
+        plt.plot(train_loss[:,1], lw=2)
+        plt.plot(train_loss[:,2], lw=2)
         legend_label = ['train', 'bce', 'jacob', 'test']
+    else:
+        raise ValueError('invalid train_loss shape')
 
     plt.plot(test_loss, lw=2)
     plt.xlabel('epoch')
