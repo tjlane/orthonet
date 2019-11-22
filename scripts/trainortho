@@ -17,11 +17,13 @@ from orthonet import visual
 from orthonet import jacob
 from orthonet.utils import binary_normalize
 
+# fix random seeds for debugging
+if True:
+    torch.manual_seed(0)
+    np.random.seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-#torch.manual_seed(0)
-#np.random.seed(0)
-#torch.backends.cudnn.deterministic = True
-#torch.backends.cudnn.benchmark = False
 
 def parse_args():
 
@@ -31,11 +33,11 @@ def parse_args():
                         required=True, default='ae',
                         help='{ae, vae}')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N',
-                        help='input batch size for training (default: 64)')
+                        help='input batch size for training (default: 32)')
     parser.add_argument('--epochs', type=int, default=250, metavar='N',
                         help='number of epochs to train (default: 250)')
-    parser.add_argument('--latent-size', type=int, default=10, metavar='N',
-                        help='size of latent layer (default: 10)')
+    parser.add_argument('--latent-size', type=int, default=5, metavar='N',
+                        help='size of latent layer (default: 5)')
     parser.add_argument('--vaebeta', type=float, default=1.0, metavar='N',
                         help='vae beta parameter (default: 1.0)')
     parser.add_argument('--obeta', type=float, default=1.0, metavar='N',
@@ -105,10 +107,16 @@ def save_comparison(epoch, x, y, batch_size):
 
 def fwd_pass(model, data):
 
+    # dblchk
     z = model.encode(data)
-    y = model.decode(z)
+    y = model(data)
 
-    bce = F.binary_cross_entropy(y, data.view(y.shape), reduction='sum')
+    # vae model returns mu, var -- handle that
+    if type(y) is not tuple:
+        bce = model.loss_function(data, y)
+    else:
+        bce = model.loss_function(data, *y)
+        y = y[0]
 
     if NO_JAC:
         jgl = torch.tensor(0.0)
@@ -116,7 +124,6 @@ def fwd_pass(model, data):
         jgl = model.ortho_beta * jacob.jg_loss(model.decode, z, model.input_size,
                                                diagonal_weight=model.diagn_beta,
                                                reduction='sum')
-
     return bce, jgl, z, y
 
 
@@ -131,9 +138,6 @@ def train(epoch, train_loader, model):
 
     for batch_idx, (data,) in enumerate(train_loader):
 
-        p1 = [p.view(-1,1).clone() for p in model.parameters()]
-
-
         data = data.to(device)
         bce, jgl, _, _ = fwd_pass(model, data)
 
@@ -141,7 +145,7 @@ def train(epoch, train_loader, model):
         jgl_loss += jgl.item()
         train_loss += bce.item() + jgl.item()
 
-        loss = bce + jgl # TODO
+        loss = bce + jgl
 
         optimizer.zero_grad()
         loss.backward()

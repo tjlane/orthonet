@@ -13,7 +13,7 @@ for obeta in obetas:
         logfile = 'log_o%.2e_d%.2e.txt' % (obeta, dbeta)
 
         sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
-        "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type ae --epochs 25 --obeta %.2e --dbeta %.2e >& %s" % (obeta, dbeta, logfile)
+        "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type vae --epochs 25 --obeta %.2e --dbeta %.2e --batch-size 64 >& %s" % (obeta, dbeta, logfile)
 
         cmd = 'bsub -q slacgpu -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
 
