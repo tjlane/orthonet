@@ -18,11 +18,11 @@ from orthonet import jacob
 from orthonet.utils import binary_normalize
 
 # fix random seeds for debugging
-if True:
-    torch.manual_seed(0)
-    np.random.seed(0)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+#print('WARNING: random seed fixed...')
+#torch.manual_seed(0)
+#np.random.seed(0)
+#torch.backends.cudnn.deterministic = True
+#torch.backends.cudnn.benchmark = False
 
 
 def parse_args():

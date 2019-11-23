@@ -144,76 +144,50 @@ def jg_loss(fxn, x, n_outputs, reduction='mean', diagonal_weight=1.0):
     return loss
 
 
-class JG_MSE_Loss:
+def jf_loss(fxn, x, n_outputs, reduction='mean'):
+    """
+    Compute the Frobenius norm loss, as per a contractive AE.
 
-    def __init__(self, beta=1.0, reduction='mean', track=True):
-        """
-        beta : float
-            The beta parameter, higher means higher penalty for non-orthogonal
-            output. Default = 1.0.
+    Parameters
+    ----------
+    fxn : nn.Model
+        The pytorch function (e.g. neural network object)
 
-        reduction : str
-            Either 'mean' or 'sum', just changes the normalization.
+    x : torch.Variable
+        The input point at which to evaluate J
 
-        track : bool
-            Whether or not to internally store the piecewise losses
-        """
+    n_outputs : int
+        The expected dimension of the output of net (dimension of range)
 
-        self.beta      = beta
-        self.reduction = reduction
-        self.track     = track
+    reduction : str
+        Either 'mean' or 'sum', just changes the normalization.
 
-        if self.track:
-            self._mse_losses = []
-            self._ort_losses = []
+    Returns
+    ------- 
+    loss : float
+        The total loss over the dataset.
 
-        return
+    Citations
+    ---------
+    .[1] Rifai, Vincent, Muller, Glorot, Bengio ICML (2011).
+    """
 
+    assert len(x.shape) == 2 # should be points x dims
 
-    @property
-    def mse_losses(self):
-        return np.array(self._mse_losses)
+    n = x.size(1)
+    jf_accum = torch.zeros(n_outputs, n, device=x.device)
+    for i in range(x.size(0)):
+        jf_accum += jacobian(fxn, x[i], n_outputs)
 
+    loss = torch.sqrt( jf_accum.pow(2).sum() ) / float(n_outputs * n)
 
-    @property
-    def ort_losses(self):
-        return np.array(self._ort_losses)
+    if reduction == 'mean':
+        loss = loss / float(x.size(0))
+    elif reduction == 'sum':
+        pass
+    else:
+        raise ValueError('reduction must be {"sum", "mean"}')
 
+    return loss
 
-    def __call__(self, pred_y, y, x, net):
-        """
-        The orthogonal loss function.
-
-            L_total = L_MSE + beta * L_ortho
-
-        Parameters
-        ----------
-        pred_y : torch.Tensor
-            The predicted output
-
-        y : torch.Tensor
-            Ground truth
-
-        x : torch.Tensor
-            The model input
-
-        net : torch.nn.Model
-            The neural network model
-
-        Output
-        -----
-        loss : float
-            The combination of the MSE and orthogonal loss.
-        """
-
-        # should we use MEAN not SUM?
-        mse = torch.sum((pred_y - y)**2)
-        #mse = F.binary_cross_entropy(pred_y, y.view(pred_y.shape), reduction='sum')
-        ort = jg_loss(net, x, y.shape[1], reduction=self.reduction)
-
-        if self.track:
-            self._mse_losses.append(mse.item())
-            self._ort_losses.append(ort.item())
-
-        return mse + self.beta * ort
 
