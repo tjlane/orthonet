@@ -1,0 +1,21 @@
+#!/usr/bin/env python
+
+import os
+import subprocess
+
+dbetas = [100.0, 1000.0]
+
+for dbeta in dbetas:
+        print('dbeta=%.2f' % dbeta)
+
+        logfile = 'log_ctr_d%.2e.txt' % dbeta
+
+        sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
+        "python ./trainctr ./bot_quarter_circle_sigma2.00.h5 --model-type ae --epochs 30 --dbeta %.2e --batch-size 32 >& %s" % (dbeta, logfile)
+
+        cmd = 'bsub -q slacgpu -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+
+        print('>>', cmd)
+        subprocess.call(cmd, shell=True)
+
+
