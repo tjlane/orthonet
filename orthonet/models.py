@@ -1,6 +1,7 @@
 
 
 import math
+import numpy as np
 
 import torch
 from torch import nn
@@ -190,10 +191,11 @@ class AE(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self, input_size, latent_size, beta=1.0):
+    def __init__(self, input_shape, latent_size, beta=1.0):
         super(VAE, self).__init__()
 
-        self.input_size  = input_size
+        self.input_shape = input_shape
+        self.input_size  = int(np.product(input_shape))
         self.latent_size = latent_size
 
         self.beta = beta
@@ -292,7 +294,7 @@ class VAE(nn.Module):
         return mu + eps*std
 
     def encode(self, x, ret_var=False):
-        conv_out = self.shared(x.view(-1,1,33,33))
+        conv_out = self.shared(x.view(-1,1,*self.input_shape))
         conv_out_flat = conv_out.squeeze()
         if ret_var:
             return self.mu_branch(conv_out_flat), self.var_branch(conv_out_flat)
@@ -321,3 +323,81 @@ class VAE(nn.Module):
         return BCE + self.beta * KLD
 
 
+class SpritesVAE(VAE):
+
+    def __init__(self, input_shape, latent_size, beta=1.0):
+        super(SpritesVAE, self).__init__(input_shape, latent_size, beta)
+
+        # encoder
+        self.shared     = nn.Sequential(
+                            # input size is 1 x 64 x 64
+                            nn.Conv2d(1, 4, 4, stride=2, padding=1, bias=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 4 x 32 x 32
+                            nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 16 x 16 x 16
+                            nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 32 x 8 x 8
+                            nn.Conv2d(32, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 32 x 4 x 4
+                            nn.Conv2d(32, 32, 4, stride=2, padding=0, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True)
+
+                            # --> into FC is 32 x 1 x 1
+                          )
+        self.mu_branch  = nn.Sequential(
+                            nn.Linear(32, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+        self.var_branch = nn.Sequential(
+                            nn.Linear(32, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+
+        # decoder
+        self.decode_fc   = nn.Sequential(
+                            nn.Linear(self.latent_size, 32),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+        self.decode_conv = nn.Sequential(
+
+                            # input is 32 x 1 x 1
+                            nn.ConvTranspose2d(32, 32, 4, stride=1, padding=0, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 32 x 4 x 4
+                            nn.ConvTranspose2d(32, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 32 x 8 x 8
+                            nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 16 x 16 x 16
+                            nn.ConvTranspose2d(16, 4, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(4, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 4 x 32 x 32
+                            nn.ConvTranspose2d(4, 1, 4, stride=2, padding=1, bias=False),
+
+                            # output size 1 x 64 x 64
+                            nn.Sigmoid()
+
+                        )
+
+        return

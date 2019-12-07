@@ -80,7 +80,7 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     J = jacobian(fxn, x, n_outputs)
     Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
-    n = x.size()[0]
+    #n = x.size(0)
     #assert J.shape == (n_outputs, n)
 
     G = torch.mm(torch.transpose(Jc, 0, 1), Jc) # Jacobian Grammian (outer product)
@@ -92,7 +92,6 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
         return JG
     else:
         return G
-
 
 
 def jg_loss(fxn, x, n_outputs, reduction='mean', diagonal_weight=1.0):

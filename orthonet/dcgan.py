@@ -21,13 +21,14 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 
+from orthonet import jacob
+
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 # Set random seed for reproducibility
-manualSeed = 999
-#manualSeed = random.randint(1, 10000) # use if you want new results
+#manualSeed = 999
+manualSeed = random.randint(1, 10000) # use if you want new results
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
@@ -35,25 +36,27 @@ print('\n\n >>>>>> DCGAN >>>>>>')
 ######################################################################
 # Inputs
 
-dataroot    = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef"
-workers     = 16
-batch_size  = 128
+ngpu        = 4
+dataroot    = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef/training_data"
+workers     = ngpu
+batch_size  = ngpu
 image_size  = 64
 nc          = 1
 ngf         = 64
 ndf         = 64
 lr          = 0.0002
 beta1       = 0.5
-noise_level = 0.1
-ngpu        = 8
+noise_level = 0.15
 
-nz         = int(sys.argv[-3])
-ortho_beta = float(sys.argv[-2])
+nz         = int(sys.argv[-4])
+ortho_beta = float(sys.argv[-3])
+diagn_beta = float(sys.argv[-2])
 num_epochs = int(sys.argv[-1])
 
 print(' ------ PARAMETERS --------')
 print(' > nz     :  %d' % nz)
 print(' > obeta  :  %.2f' % ortho_beta)
+print(' > dbeta  :  %.2f' % diagn_beta)
 print(' > epochs :  %d' % num_epochs)
 print(' > rseed  :  %d' % manualSeed)
 print('')
@@ -61,7 +64,7 @@ print('')
 
 # decide on a place to put results
 bas_dir    = '/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef/models'
-res_dir    = 'nz%d_ortho%.2f_epoch%d' % (nz, ortho_beta, num_epochs)
+res_dir    = 'nz%d_ortho%.2e_d%.2e_epoch%d' % (nz, ortho_beta, diagn_beta, num_epochs)
 out_dir    = os.path.join(bas_dir, res_dir)
 if os.path.exists(out_dir):
     os.system('rm -r %s' % out_dir)
@@ -101,19 +104,19 @@ class Generator(nn.Module):
         self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.ConvTranspose2d( nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
+            nn.BatchNorm2d(ngf * 8, track_running_stats=False),
             nn.ReLU(True),
             # state size. (ngf*8) x 4 x 4
             nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
+            nn.BatchNorm2d(ngf * 4, track_running_stats=False),
             nn.ReLU(True),
             # state size. (ngf*4) x 8 x 8
             nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
+            nn.BatchNorm2d(ngf * 2, track_running_stats=False),
             nn.ReLU(True),
             # state size. (ngf*2) x 16 x 16
             nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
+            nn.BatchNorm2d(ngf, track_running_stats=False),
             nn.ReLU(True),
             # state size. (ngf) x 32 x 32
             nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False),
@@ -121,8 +124,10 @@ class Generator(nn.Module):
             # state size. (nc) x 64 x 64
         )
 
-    def forward(self, input):
-        return self.main(input)
+    def forward(self, z):
+        if len(z.size()) == 2:
+            z = z.unsqueeze(-1).unsqueeze(-1)
+        return self.main(z)
 
 
 class Discriminator(nn.Module):
@@ -135,15 +140,15 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 32 x 32
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
+            nn.BatchNorm2d(ndf * 2, track_running_stats=False),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*2) x 16 x 16
             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
+            nn.BatchNorm2d(ndf * 4, track_running_stats=False),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*4) x 8 x 8
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
+            nn.BatchNorm2d(ndf * 8, track_running_stats=False),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*8) x 4 x 4
             nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
@@ -179,7 +184,7 @@ criterion = nn.BCELoss()
 
 # Create batch of latent vectors that we will use to visualize
 #  the progression of the generator
-fixed_noise = torch.randn(64, nz, 1, 1, device=device)
+fixed_noise = torch.randn(batch_size, nz, 1, 1, device=device)
 
 # Establish convention for real and fake labels during training
 real_label = 1
@@ -253,23 +258,32 @@ for epoch in range(num_epochs):
         errGC = criterion(output, label)
         # Calculate gradients for G
         errGC.backward()
-        D_G_z2 = output.mean().item()
 
         # -- tjl addition
-        #errGJ = ortho_beta * jg_loss(netG, noise, image_size*image_size, 
-        #                             reduction='mean')
-        #errJ.backward()
-        errG = errGC #+ errGJ
+        if ortho_beta > 0.0:
+            errGJ = ortho_beta * jacob.jg_loss(netG, noise.squeeze(), image_size*image_size, 
+                                               diagonal_weight=diagn_beta,
+                                               reduction='mean')
+            errGJ.backward()
+            errG = errGC + errGJ
+        else:
+            errG = errGC
+            errGJ = 0.0
         # ^^^^^^^^^^^^^^^
 
         # Update G
+        D_G_z2 = output.mean().item()
         optimizerG.step()
         
         # Output training stats
         if i % 50 == 0:
-            print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+            print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f\tLoss_G, C %.2e | J %.2e'
                   % (epoch, num_epochs, i, len(dataloader),
-                     errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+                     errD.item(), 
+                     errG.item(), 
+                     D_x, 
+                     D_G_z1, D_G_z2,
+                     errGC, errGJ))
         
         # Save Losses for plotting later
         G_losses.append(errG.item())

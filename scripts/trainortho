@@ -12,7 +12,7 @@ from torch.nn import functional as F
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from orthonet.models import VAE, AE
+from orthonet.models import AE, VAE, SpritesVAE
 from orthonet import visual
 from orthonet import jacob
 from orthonet.utils import binary_normalize
@@ -29,7 +29,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description='run VAE on simple simulation')
     parser.add_argument('data_file', type=str, help='data file to load')
-    parser.add_argument('--model-type', type=str, choices=['ae', 'vae'],
+    parser.add_argument('--model-type', type=str, choices=['ae', 'vae', 'spritesvae'],
                         required=True, default='ae',
                         help='{ae, vae}')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N',
@@ -68,9 +68,13 @@ def setup_device(args):
 def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
     f = h5py.File(data_file, 'r', libver='latest', swmr=True)
-    data = np.array(f['data']).astype(np.float32) # are now binary
-    #data = data[:128]
-    data = data[:24800]
+
+    if 'data' in f.keys():
+        data = np.array(f['data']).astype(np.float32)
+        #data = data[:24800]
+    elif 'imgs' in f.keys():
+        data = np.array(f['imgs'][:]).astype(np.float32)
+
     print('shp:', data.shape)
     f.close()
 
@@ -129,7 +133,7 @@ def fwd_pass(model, data):
 
 def train(epoch, train_loader, model):
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-3)
 
     model.train()
     train_loss = 0.0
@@ -220,7 +224,7 @@ def main():
                                                       loader_kwargs=loader_kwargs)
 
     global resdir
-    resdir = 'ortho_%s_ob%.2e_db%.2e' % (args.model_type, args.obeta, args.dbeta)
+    resdir = 'ortho_%s-%.2e_ob%.2e_db%.2e' % (args.model_type, args.vaebeta, args.obeta, args.dbeta)
     for dirc in [resdir, 
                  pjoin(resdir, 'reconstructions'), 
                  pjoin(resdir, 'samples'),
@@ -238,7 +242,9 @@ def main():
     if args.model_type == 'ae':
         model = AE(input_size, latent_size)
     elif args.model_type == 'vae':
-        model = VAE(input_size, latent_size)
+        model = VAE(field_shape, latent_size, beta=args.vaebeta)
+    elif args.model_type == 'spritesvae':
+        model = SpritesVAE(field_shape, latent_size, beta=args.vaebeta)
 
     # pass on parameters by ducktyping
     model.ortho_beta = args.obeta
