@@ -3,21 +3,23 @@
 import os
 import subprocess
 
-obetas = [0.0, 1e-13, 1e-12, 1e-11, 1e-9]
-dbetas = [0.0, 0.01, 0.1, 1.0, 10.0]
+obetas = [3e4, 4e4, 5e4, 6e4, 7e4, 8e4, 9e4]
+dbetas = [1.0]
+vbetas = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 for obeta in obetas:
     for dbeta in dbetas:
-        print('obeta=%.2e, dbeta=%.2f' % (obeta, dbeta))
+        for vbeta in vbetas:
+            print('obeta=%.2e, dbeta=%.2f, vbeta=%.2f' % (obeta, dbeta, vbeta))
 
-        logfile = 'log_o%.2e_d%.2e.txt' % (obeta, dbeta)
+            logfile = 'log_o%.2e_d%.2e_v%.2e.txt' % (obeta, dbeta, vbeta)
 
-        sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
-        "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type vae --epochs 25 --obeta %.2e --dbeta %.2e --batch-size 64 >& %s" % (obeta, dbeta, logfile)
+            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
+            "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type vae --epochs 50 --obeta %.2e --dbeta %.2e --vaebeta %.2e --batch-size 32 >& %s" % (obeta, dbeta, vbeta, logfile)
 
-        cmd = 'bsub -q slacgpu -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+            cmd = 'bsub -q slacgpu -n 1 -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
 
-        print('>>', cmd)
-        subprocess.call(cmd, shell=True)
+            print('>>', cmd)
+            subprocess.call(cmd, shell=True)
 
 

@@ -3,25 +3,26 @@
 import os
 import subprocess
 
-nz     = 128
-n_epch = 20
-obetas = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+nzs    = [8, 16, 32, 64]
+n_epch = 60
+obetas = [0.1, 1.0, 10.0]
 dbetas = [1.0]
 
-for obeta in obetas:
-    for dbeta in dbetas:
-        print('obeta=%.2e, dbeta=%.2f' % (obeta, dbeta))
+for nz in nzs:
+    for obeta in obetas:
+        for dbeta in dbetas:
+            print('obeta=%.2e, dbeta=%.2f' % (obeta, dbeta))
 
-        logfile = 'log_o%.2e_d%.2e.txt' % (obeta, dbeta)
+            logfile = 'log_o%.2e_d%.2e.txt' % (obeta, dbeta)
 
-        # fmt: python dcgan.py <nz> <ortho_beta> <diag_beta> <num_epochs>
+            # fmt: python dcgan.py <nz> <ortho_beta> <diag_beta> <num_epochs>
 
-        sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef && " +\
-        "python /u/xl/tjlane/opt/orthonet/orthonet/dcgan.py %d %f %f %d >& %s" % (nz, obeta, dbeta, n_epch, logfile)
+            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef && " +\
+            "python /u/xl/tjlane/opt/orthonet/orthonet/dcgan.py %d %f %f %d >& %s" % (nz, obeta, dbeta, n_epch, logfile)
 
-        cmd = 'bsub -q slacgpu -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+            cmd = 'bsub -q slacgpu -gpu "num=4:gmodel=TeslaV100_SXM2_32GB" "%s"' % sub_txt
 
-        print('>>', cmd)
-        #subprocess.call(cmd, shell=True)
+            print('>>', cmd)
+            subprocess.call(cmd, shell=True)
 
 
