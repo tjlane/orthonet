@@ -10,14 +10,13 @@ dirname = os.path.dirname(__file__)
 setup(
     name='orthonet',
     version=version,
-    author='Poitevin, Moilane, Lane',
+    author='TJ Lane',
     author_email='thomas.joseph.lane@gmail.com',
     url='https://github.com/tjlane/orthonet',
 
     # Packages and depencies
-    packages=['orthonet', 'orthonet.temsim'],
-    package_dir={'orthonet': 'orthonet',
-                 'orthonet.temsim' : 'orthonet/temsim'},
+    packages=['orthonet'],
+    package_dir={'orthonet': 'orthonet'},
     install_requires=[
         'numpy',
         'torch'
