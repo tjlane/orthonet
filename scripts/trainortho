@@ -12,7 +12,7 @@ from torch.nn import functional as F
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from orthonet.models import AE, VAE, SpritesVAE
+from orthonet.models import AE, VAE, SpritesVAE, MnistVAE, VisDataParallel
 from orthonet import visual
 from orthonet import jacob
 from orthonet.utils import binary_normalize
@@ -29,20 +29,22 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description='run VAE on simple simulation')
     parser.add_argument('data_file', type=str, help='data file to load')
-    parser.add_argument('--model-type', type=str, choices=['ae', 'vae', 'spritesvae'],
+    parser.add_argument('--model-type', type=str, choices=['ae', 'vae', 'spritesvae', 'mnistvae'],
                         required=True, default='ae',
-                        help='{ae, vae}')
-    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+                        help='architecture')
+    parser.add_argument('--ngpu', type=int, default=1,
+                        help='number of GPUs to ask for')
+    parser.add_argument('--batch-size', type=int, default=32,
                         help='input batch size for training (default: 32)')
-    parser.add_argument('--epochs', type=int, default=250, metavar='N',
+    parser.add_argument('--epochs', type=int, default=250,
                         help='number of epochs to train (default: 250)')
-    parser.add_argument('--latent-size', type=int, default=5, metavar='N',
+    parser.add_argument('--latent-size', type=int, default=5,
                         help='size of latent layer (default: 5)')
-    parser.add_argument('--vaebeta', type=float, default=1.0, metavar='N',
+    parser.add_argument('--vaebeta', type=float, default=1.0,
                         help='vae beta parameter (default: 1.0)')
-    parser.add_argument('--obeta', type=float, default=1.0, metavar='N',
+    parser.add_argument('--obeta', type=float, default=1.0,
                         help='ortho beta parameter (default: 1.0)')
-    parser.add_argument('--dbeta', type=float, default=1.0, metavar='N',
+    parser.add_argument('--dbeta', type=float, default=1.0,
                         help='diagn beta parameter (default: 1.0)')
     parser.add_argument('--no-jac', action='store_true', default=False,
                         help='hard disable of jacobian computation')
@@ -74,6 +76,8 @@ def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
         #data = data[:24800]
     elif 'imgs' in f.keys():
         data = np.array(f['imgs'][:]).astype(np.float32)
+        pi = np.random.permutation(data.shape[0])
+        data = data[pi,:,:]
 
     print('shp:', data.shape)
     f.close()
@@ -95,6 +99,27 @@ def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
         batch_size=batch_size, shuffle=True, **loader_kwargs)
 
     return train_loader, test_loader, data.shape
+
+
+def load_mnist(batch_size, loader_kwargs={}):
+
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('./data', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                       ])),
+        batch_size=batch_size, shuffle=True, **loader_kwargs)
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('./data', train=False, transform=transforms.Compose([
+                           transforms.ToTensor(),
+                       ])),
+        batch_size=batch_size, shuffle=True, **loader_kwargs)  
+
+    # dataset is 60 000 training and 10 000 test 28x28 images
+    data_shape = (60000 + 10000, 28, 28)
+
+    return train_loader, test_loader, data_shape
 
 # ---------------------------------------------------------------------------------
 
@@ -140,7 +165,9 @@ def train(epoch, train_loader, model):
     bce_loss   = 0.0
     jgl_loss   = 0.0
 
-    for batch_idx, (data,) in enumerate(train_loader):
+    for batch_idx, batch in enumerate(train_loader):
+
+        data = batch[0].squeeze()
 
         data = data.to(device)
         bce, jgl, _, _ = fwd_pass(model, data)
@@ -184,7 +211,9 @@ def test(epoch, test_loader, model):
 
     with torch.no_grad():
 
-        for i, (data,) in enumerate(test_loader):
+        for i, batch in enumerate(test_loader):
+
+            data = batch[0].squeeze()
 
             data = data.to(device)
             bce, jgl, z, y = fwd_pass(model, data)
@@ -219,9 +248,13 @@ def main():
     global device
     device, loader_kwargs = setup_device(args)
 
-    train_loader, test_loader, data_shape = load_data(args.data_file, 
-                                                      args.batch_size, 
-                                                      loader_kwargs=loader_kwargs)
+    if args.data_file == 'mnist':
+        train_loader, test_loader, data_shape = load_mnist(args.batch_size, 
+                                                           loader_kwargs=loader_kwargs)
+    else:
+        train_loader, test_loader, data_shape = load_data(args.data_file, 
+                                                          args.batch_size, 
+                                                          loader_kwargs=loader_kwargs)
 
     global resdir
     resdir = 'ortho_%s-%.2e_ob%.2e_db%.2e' % (args.model_type, args.vaebeta, args.obeta, args.dbeta)
@@ -245,19 +278,27 @@ def main():
         model = VAE(field_shape, latent_size, beta=args.vaebeta)
     elif args.model_type == 'spritesvae':
         model = SpritesVAE(field_shape, latent_size, beta=args.vaebeta)
+    elif args.model_type == 'mnistvae':
+        model = MnistVAE(field_shape, latent_size, beta=args.vaebeta)
+
+    if (args.ngpu > 1) and (not args.no_cuda):
+
+        n_to_use = min(torch.cuda.device_count(), args.ngpu)
+
+        print('\n-------- GPU PARALLELISM >>')
+        print(' >> requesting %d GPUs' % args.ngpu)
+        print(' >> %d available' % torch.cuda.device_count())
+        print(' >> using %d GPUs' % n_to_use)
+        print('')
+
+        device_ids = range(0, n_to_use)
+        model = VisDataParallel(model, device_ids=device_ids, output_device=0)
+
+    model.to(device)
 
     # pass on parameters by ducktyping
     model.ortho_beta = args.obeta
     model.diagn_beta = args.dbeta
-
-    #if torch.cuda.device_count() > 1:
-    #    n_to_use = 4
-    #    device_ids = range(0,n_to_use)
-    #    print("Using:", n_to_use, 'of', torch.cuda.device_count(), "GPUs")
-    #    #model = OpenDataParallel(model, device_ids=device_ids, output_device=0)
-    #    model = OpenDataParallel(model)
-
-    model.to(device)
 
     # -------------------
 
@@ -267,9 +308,7 @@ def main():
     for epoch in range(1, args.epochs + 1):
 
         train_loss[epoch-1,:]  = train(epoch, train_loader, model)
-        torch.save(model, pjoin(resdir, 'model_train.pt')) # todo
         test_loss[epoch-1]     = test(epoch, test_loader,  model)
-        torch.save(model, pjoin(resdir, 'model_test.pt')) # todo
 
         torch.save(model, pjoin(resdir, 'checkpoints/model_%d.pt' % epoch))
 

@@ -15,21 +15,28 @@ def unif_init(tensor):
     tensor.data.uniform_(-stdv, stdv)
 
 
-class OpenDataParallel(nn.DataParallel):
+class VisDataParallel(nn.DataParallel):
     """
     DataParallel hides the module's methods to avoid name conflicts
     This class simply exposes a few key methods from the base classes
     """
 
-    def encode(self, arg):
-        return self.module.encode(arg)
+    def encode(self, *args):
+        return self.module.encode(*args)
 
-    def decode(self, arg):
-        return self.module.decode(arg)
+    def decode(self, *args):
+        return self.module.decode(*args)
 
     def loss_function(self, *args):
         return self.module.loss_function(*args)
 
+    @property
+    def input_size(self):
+        if hasattr(self.module, 'input_size'):
+            r = self.module.input_size
+        else:
+            r = None
+        return r
 
 
 class ResFC(nn.Module):
@@ -67,14 +74,6 @@ class ResFC(nn.Module):
         z  = self.dp(nm)
         return z
 
-
-class SigmoidOutput(nn.Module):
-    def __init__(self, in_size, out_size):
-        super(SigmoidOutput, self).__init__()
-        self.linear = nn.Linear(in_size, out_size, bias=True)
-
-    def forward(self, x):
-        return torch.sigmoid(self.linear(x))
 
 
 class AE(nn.Module):
@@ -328,6 +327,8 @@ class SpritesVAE(VAE):
     def __init__(self, input_shape, latent_size, beta=1.0):
         super(SpritesVAE, self).__init__(input_shape, latent_size, beta)
 
+        self.dropout_p = 0.25
+
         # encoder
         self.shared     = nn.Sequential(
                             # input size is 1 x 64 x 64
@@ -338,21 +339,25 @@ class SpritesVAE(VAE):
                             nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # current size is 16 x 16 x 16
                             nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # current size is 32 x 8 x 8
                             nn.Conv2d(32, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # current size is 32 x 4 x 4
                             nn.Conv2d(32, 32, 4, stride=2, padding=0, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True)
+                            nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p)
 
                             # --> into FC is 32 x 1 x 1
                           )
@@ -376,21 +381,25 @@ class SpritesVAE(VAE):
                             nn.ConvTranspose2d(32, 32, 4, stride=1, padding=0, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # size 32 x 4 x 4
                             nn.ConvTranspose2d(32, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # size 32 x 8 x 8
                             nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # size 16 x 16 x 16
                             nn.ConvTranspose2d(16, 4, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(4, track_running_stats=False),
                             nn.LeakyReLU(0.2, inplace=True),
+                            #nn.Dropout2d(self.dropout_p),
 
                             # size 4 x 32 x 32
                             nn.ConvTranspose2d(4, 1, 4, stride=2, padding=1, bias=False),
@@ -401,3 +410,83 @@ class SpritesVAE(VAE):
                         )
 
         return
+
+
+class MnistVAE(VAE):
+
+    def __init__(self, input_shape, latent_size, beta=1.0):
+        super(MnistVAE, self).__init__(input_shape, latent_size, beta)
+
+        # encoder
+        self.shared     = nn.Sequential(
+                            # input size is 1 x 28 x 28
+                            nn.Conv2d(1, 4, 4, stride=2, padding=3, bias=False),
+                            nn.BatchNorm2d(4, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 4 x 16 x 16
+                            nn.Conv2d(4, 8, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(8, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 8 x 16 x 16
+                            nn.Conv2d(8, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 16 x 8 x 8
+                            nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 32 x 4 x 4
+                            nn.Conv2d(32, 64, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(64, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # current size is 64 x 1 x 1
+                            # --> into FC
+                          )
+        self.mu_branch  = nn.Sequential(
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+        self.var_branch = nn.Sequential(
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+
+        # decoder
+        self.decode_fc   = nn.Sequential(
+                            nn.Linear(self.latent_size, 64),
+                            nn.LeakyReLU(0.2, inplace=True),
+                          )
+        self.decode_conv = nn.Sequential(
+
+                            # input is 64 x 1 x 1
+                            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(32, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 32 x 4 x 4
+                            nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(16, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 16 x 8 x 8
+                            nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(8, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # size 8 x 16 x 16
+                            nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
+                            nn.BatchNorm2d(4, track_running_stats=False),
+                            nn.LeakyReLU(0.2, inplace=True),
+
+                            # output size 4 x 28 x 28
+                            nn.ConvTranspose2d(4, 1, 4, stride=2, padding=3, bias=False),
+                            nn.Sigmoid()
+                        )
+
+        return
+
