@@ -1,0 +1,27 @@
+#!/usr/bin/env python
+
+import os
+import subprocess
+
+obetas = [1.0]
+dbetas = [1.0]
+vbetas = [1.0]
+ngpu   = 10
+
+for obeta in obetas:
+    for dbeta in dbetas:
+        for vbeta in vbetas:
+            print('obeta=%.2e, dbeta=%.2f, vbeta=%.2f' % (obeta, dbeta, vbeta))
+
+            logfile = 'log_o%.2e_d%.2e_v%.2e_%dgpu.txt' % (obeta, dbeta, vbeta, ngpu)
+
+            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/sprites && " +\
+            "time python ./trainortho ./dsprites.h5 --model-type spritesvae " +\
+            "--ngpu %d --epochs 1 --obeta %.2e --dbeta %.2e --vaebeta %.2e --batch-size 8 --latent-size 16 >& %s" % (ngpu, obeta, dbeta, vbeta, logfile)
+
+            cmd = 'bsub -q slacgpu -n %d -gpu "num=1:gmodel=GeForceRTX2080Ti:mode=exclusive_process:j_exclusive=no:mps=no" "%s"' % (ngpu, sub_txt)
+
+            print('>>', cmd)
+            subprocess.call(cmd, shell=True)
+
+
