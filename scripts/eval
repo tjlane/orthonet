@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+
+import argparse
+import numpy as np
+import h5py
+
+from disentanglement_lib.data.ground_truth import dummy_data
+from disentanglement_lib.data.ground_truth import ground_truth_data
+from disentanglement_lib.evaluation.metrics import beta_vae
+
+RANDST = np.random.RandomState(0)
+
+
+class BotData(ground_truth_data.GroundTruthData):
+
+    def __init__(self, filepath):
+        self.file_handle = h5py.File(filepath, 'r')
+        self.data   = np.array(f['data'])
+        self.r      = np.array(f['r'])
+        self.theta  = np.array(f['theta'])
+        return
+
+    @property
+    def num_factors(self):
+        return 2
+
+    @property
+    def factors_num_values(self):
+
+    @property
+    def observation_shape(self):
+        return data.shape[1:]
+
+    def sample_factors(self, num, random_state):
+        """Sample a batch of factors Y."""
+
+    def sample_observations_from_factors(self, factors, random_state):
+        """Sample a batch of observations X given a batch of factors Y."""
+        
+
+    def sample(self, num, random_state):
+        """Sample a batch of factors Y and observations X."""
+        factors = self.sample_factors(num, random_state)
+        return factors, self.sample_observations_from_factors(factors, random_state)
+
+    def sample_observations(self, num, random_state):
+        """Sample a batch of observations X."""
+        return self.sample(num, random_state)[1]
+
+
+def load_data(data_file):
+
+    # TODO
+    # need to implement the disentanglement_lib.data.ground_truth.ground_truth_data.GroundTruthData
+    # class for each of the datasets I would like to use
+    # this basically exposes the factors of variation in a sane way to the score generators
+
+    f = h5py.File(data_file, 'r', libver='latest', swmr=True)
+
+    if 'data' in f.keys():   # my toy models
+        data = np.array(f['data']).astype(np.float32)
+        data = data.clip(0.0, 1.0)
+
+    elif 'imgs' in f.keys(): # dsprites
+        data = np.array(f['imgs'][:]).astype(np.float32)
+        pi = np.random.permutation(data.shape[0])
+        data = data[pi,:,:]
+        
+    #data = data[:32768]
+
+    print('Loaded data... shp:', data.shape)
+    f.close()
+
+    return data
+
+
+def beta_vae_score(model, data):
+
+    n_data = data.shape[0]
+    n_train = n_data // 2
+    n_eval  = n_data - n_train
+
+    scores = beta_vae.compute_beta_vae_sklearn(data, model, RANDST, 
+                                               artifact_dir=None, 
+                                               batch_size=5, 
+                                               num_train=n_train, 
+                                               num_eval=n_eval)
+    print(scores["train_accuracy"])
+    print(scores["eval_accuracy"])
+    return scores
+
+
+def main():
+
+    parser = argparse.ArgumentParser(description='Compute Disentanglement Metrics')
+    parser.add_argument('dataset', type=str,
+                        help='the h5 dataset to load')
+    parser.add_argument('model', type=str,
+                        help='the pt model to load')
+    args = parser.parse_args()
+
+    data = np.random.randn(128, 32, 32)
+    #data = load_data(args.dataset)
+
+    model = lambda x : x
+    #model = torch.load(args.model)
+
+    beta_vae_score(model, data)
+
+    return
+
+if __name__ == '__main__':
+    main()
+
