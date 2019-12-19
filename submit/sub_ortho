@@ -3,9 +3,9 @@
 import os
 import subprocess
 
-obetas = [7e4]
+obetas = [1.0]
 dbetas = [1.0]
-vbetas = [0.6]
+vbetas = [1.0]
 
 for obeta in obetas:
     for dbeta in dbetas:
@@ -14,10 +14,13 @@ for obeta in obetas:
 
             logfile = 'log_o%.2e_d%.2e_v%.2e.txt' % (obeta, dbeta, vbeta)
 
-            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/semicirc_sigma2 && " +\
-            "python ./trainortho ./bot_quarter_circle_sigma2.00.h5 --model-type vae --epochs 50 --obeta %.2e --dbeta %.2e --vaebeta %.2e --batch-size 32 >& %s" % (obeta, dbeta, vbeta, logfile)
+            #sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/ellipse && " +\
+            #sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/toys/circ_sigma2 && " +\
+            sub_txt = "cd ../toys/semicirc_noise && " +\
+            "python ./trainortho ./data.h5 --model-type vae --epochs 50 --obeta %.2e --dbeta %.2e --vaebeta %.2e --batch-size 16 >& %s" % (obeta, dbeta, vbeta, logfile)
 
-            cmd = 'bsub -q slacgpu -n 1 -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+            #cmd = 'bsub -q slacgpu -n 1 -gpu "num=1:gmodel=GeForceRTX2080Ti" "%s"' % sub_txt
+            cmd = 'sbatch -p ml -A ml --job-name=noise -n 1 --gpus geforce_rtx_2080_ti:1 --wrap "%s"' % sub_txt
 
             print('>>', cmd)
             subprocess.call(cmd, shell=True)

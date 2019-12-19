@@ -6,7 +6,7 @@ import subprocess
 obetas = [1.0]
 dbetas = [1.0]
 vbetas = [1.0]
-ngpu   = 10
+ngpu   = 2
 
 for obeta in obetas:
     for dbeta in dbetas:

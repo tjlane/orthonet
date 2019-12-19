@@ -183,7 +183,10 @@ class AE(nn.Module):
 
     @staticmethod
     def loss_function(x, recon_x):
-        BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')
+        recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
+        BCE = F.binary_cross_entropy(recon_x, 
+                                     x.view(recon_x.shape), 
+                                     reduction='sum')
         return BCE
 
 
@@ -314,7 +317,10 @@ class VAE(nn.Module):
         return self.decode(z), mu, logvar
 
     def loss_function(self, x, recon_x, mu, logvar):
-        BCE = F.binary_cross_entropy(recon_x, x.view(recon_x.shape), reduction='sum')
+        recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
+        BCE = F.binary_cross_entropy(recon_x, 
+                                     x.view(recon_x.shape),
+                                     reduction='sum')
 
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())

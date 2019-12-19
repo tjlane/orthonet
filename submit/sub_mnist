@@ -4,7 +4,7 @@ import os
 import subprocess
 
 obetas = [1.0]
-dbetas = [1e3]
+dbetas = [1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18]
 vbetas = [1.0]
 
 for obeta in obetas:
