@@ -3,6 +3,7 @@
 import os
 import h5py
 import argparse
+import time
 import numpy as np
 from os.path import join as pjoin
 
@@ -147,6 +148,7 @@ def fwd_pass(model, data):
         bce = model.loss_function(data, y)
     else:
         bce = model.loss_function(data, *y)
+        y = y[0]
 
     if NO_JAC:
         jgl = torch.tensor(0.0)
@@ -306,6 +308,7 @@ def main():
     train_loss  = np.zeros((args.epochs, 3))
     test_loss   = np.zeros(args.epochs)
 
+    start_time = time.time()
     for epoch in range(1, args.epochs + 1):
 
         train_loss[epoch-1,:]  = train(epoch, train_loader, model)
@@ -320,6 +323,8 @@ def main():
             sample = model.decode(sample).cpu()
             save_image(sample.view(64, 1, *field_shape),
                        pjoin(resdir, 'samples/sample_%d.png' % epoch))
+
+    print('>>>> Training Time: %.0f' % (time.time() - start_time))
 
     with torch.no_grad():
 

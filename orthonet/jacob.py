@@ -149,8 +149,8 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     GJ : torch.Tensor
         The Jacobian-Grammian J^T * J ( size n x n, n=size(flat(x))) )
     """
-    J = jacobian(fxn, x, n_outputs)
-    #J = fwd_jacobian(fxn, x, n_outputs)
+
+    J = fwd_jacobian(fxn, x, n_outputs)
     Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
@@ -249,7 +249,7 @@ def jf_loss(fxn, x, n_outputs, reduction='mean'):
     n = x.size(1)
     jf_accum = torch.zeros(n_outputs, n, device=x.device)
     for i in range(x.size(0)):
-        jf_accum += jacobian(fxn, x[i], n_outputs) # fwd
+        jf_accum += fwd_jacobian(fxn, x[i], n_outputs)
 
     loss = torch.sqrt( jf_accum.pow(2).sum() ) / float(n_outputs * n)
 
