@@ -73,7 +73,7 @@ def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
     if 'data' in f.keys():   # my toy models
         data = np.array(f['data']).astype(np.float32)
-        #data = data[:24800]
+        data = data[:256]
         data = data.clip(0.0, 1.0)
     elif 'imgs' in f.keys(): # dsprites
         data = np.array(f['imgs'][:]).astype(np.float32)
@@ -146,17 +146,7 @@ def fwd_pass(model, data):
     if type(y) is not tuple:
         bce = model.loss_function(data, y)
     else:
-        # TODO
-        # attempting to catch strange bug
-        # seems like reconstruction is out of bounds for BCE in some way
-        try:
-            bce = model.loss_function(data, *y)
-        except Exception as e:
-            print('ERR in BCE:', e)
-            print('y:', y)
-            print('proceeding with bogus y')
-            y = (torch.tensor(np.random.randn(*data.shape[1:])),) # xyz
-        y = y[0]
+        bce = model.loss_function(data, *y)
 
     if NO_JAC:
         jgl = torch.tensor(0.0)

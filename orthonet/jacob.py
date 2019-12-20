@@ -98,11 +98,7 @@ def fwd_jacobian(fxn, x, n_outputs, retain_graph=True):
 
     # first, compute *any* VJP 
     v = torch.ones(1, n_outputs, device=x.device, requires_grad=True)
-
-    # TODO pytorch wants batches of at least two inputs in training mode
-    #      currently passing two and slicing out the first, seems dumb
-    #      CAN WE PASS A BATCH HERE INSTEAD?????
-    y = fxn(xd.repeat(2,1))[0].view(n_outputs)
+    y = fxn(xd.view(1,n_inputs)).view(n_outputs)
 
     if y.size(0) != n_outputs:
         raise ValueError('Function `fxn` does not give output '
@@ -114,7 +110,6 @@ def fwd_jacobian(fxn, x, n_outputs, retain_graph=True):
                               create_graph=True,
                               retain_graph=retain_graph)[0]
     assert vjp.shape == (n_inputs,)
-    print('vjp', vjp)
 
     # TODO somehow the repeat trick does not work anymore
     #      now that we have to take derivatives wrt v
@@ -154,8 +149,8 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     GJ : torch.Tensor
         The Jacobian-Grammian J^T * J ( size n x n, n=size(flat(x))) )
     """
-
-    J = fwd_jacobian(fxn, x, n_outputs)
+    J = jacobian(fxn, x, n_outputs)
+    #J = fwd_jacobian(fxn, x, n_outputs)
     Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
@@ -254,7 +249,7 @@ def jf_loss(fxn, x, n_outputs, reduction='mean'):
     n = x.size(1)
     jf_accum = torch.zeros(n_outputs, n, device=x.device)
     for i in range(x.size(0)):
-        jf_accum += fwd_jacobian(fxn, x[i], n_outputs)
+        jf_accum += jacobian(fxn, x[i], n_outputs) # fwd
 
     loss = torch.sqrt( jf_accum.pow(2).sum() ) / float(n_outputs * n)
 
