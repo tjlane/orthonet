@@ -41,20 +41,21 @@ def test_jacobian():
         assert torch.allclose( Jy(x), jacob.jacobian(y, x, 3))
 
 
+def test_fwd_jacobian():
+    for i in range(10):
+        x = torch.randn(2)
+        J = jacob.fwd_jacobian(y, x, 3)
+        assert torch.allclose( Jy(x), J), (Jy(x), J)
+
+
 def test_jacobian_grammian():
-    pass
+    for i in range(10):
+        x = torch.randn(2)
+        J = Jy(x)
+        assert torch.allclose( torch.mm(J.t(), J), jacob.jacobian_grammian(y, x, 3))
+   
 
-
-def test_jg_loss():
-    pass
-
-
-def test_jg_loss_function():
-    pass
-
-
-    
 if __name__ == '__main__':
-    test_jacobian()
-
+    test_fwd_jacobian()
+    #test_jacobian_grammian()
 
