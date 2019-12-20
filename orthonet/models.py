@@ -57,7 +57,7 @@ class ResFC(nn.Module):
 
         self.t1 = nn.Linear(self.in_size, self.out_size, bias=False)
         self.t2 = nn.Linear(self.out_size, self.out_size, bias=False)
-        self.bn = nn.BatchNorm1d(self.out_size)
+        self.bn = nn.InstanceNorm1d(self.out_size)
         self.dp = nn.Dropout(p=dropout_p, inplace=False)
 
         if self.in_size != self.out_size:
@@ -119,7 +119,6 @@ class AE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
@@ -132,13 +131,11 @@ class AE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
                           )
         self.decode_conv = nn.Sequential(
 
@@ -229,7 +226,6 @@ class VAE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
@@ -241,7 +237,6 @@ class VAE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
@@ -256,13 +251,11 @@ class VAE(nn.Module):
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False),
 
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
                             nn.Linear(64, 64),
                             nn.LeakyReLU(0.2, inplace=True),
-                            nn.BatchNorm1d(64, track_running_stats=False)
                           )
         self.decode_conv = nn.Sequential(
 

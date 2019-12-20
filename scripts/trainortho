@@ -3,6 +3,7 @@
 import os
 import h5py
 import argparse
+import time
 import numpy as np
 from os.path import join as pjoin
 
@@ -73,13 +74,12 @@ def load_data(data_file, batch_size, loader_kwargs={}, traintest_split=0.9):
 
     if 'data' in f.keys():   # my toy models
         data = np.array(f['data']).astype(np.float32)
-        #data = data[:24800]
         data = data.clip(0.0, 1.0)
     elif 'imgs' in f.keys(): # dsprites
         data = np.array(f['imgs'][:]).astype(np.float32)
         pi = np.random.permutation(data.shape[0])
         data = data[pi,:,:]
-        data = data[:32768]
+        #data = data[:32768]
 
     print('shp:', data.shape)
     f.close()
@@ -146,16 +146,7 @@ def fwd_pass(model, data):
     if type(y) is not tuple:
         bce = model.loss_function(data, y)
     else:
-        # TODO
-        # attempting to catch strange bug
-        # seems like reconstruction is out of bounds for BCE in some way
-        try:
-            bce = model.loss_function(data, *y)
-        except Exception as e:
-            print('ERR in BCE:', e)
-            print('y:', y)
-            print('proceeding with bogus y')
-            y = (torch.tensor(np.random.randn(*data.shape[1:])),) # xyz
+        bce = model.loss_function(data, *y)
         y = y[0]
 
     if NO_JAC:
@@ -316,6 +307,7 @@ def main():
     train_loss  = np.zeros((args.epochs, 3))
     test_loss   = np.zeros(args.epochs)
 
+    start_time = time.time()
     for epoch in range(1, args.epochs + 1):
 
         train_loss[epoch-1,:]  = train(epoch, train_loader, model)
@@ -330,6 +322,8 @@ def main():
             sample = model.decode(sample).cpu()
             save_image(sample.view(64, 1, *field_shape),
                        pjoin(resdir, 'samples/sample_%d.png' % epoch))
+
+    print('>>>> Training Time: %.0f' % (time.time() - start_time))
 
     with torch.no_grad():
 
