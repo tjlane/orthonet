@@ -10,11 +10,6 @@ from torch.nn import functional as F
 from orthonet import jacob
 
 
-def unif_init(tensor):
-    stdv = 1. / math.sqrt(tensor.size(1))
-    tensor.data.uniform_(-stdv, stdv)
-
-
 class VisDataParallel(nn.DataParallel):
     """
     DataParallel hides the module's methods to avoid name conflicts
@@ -39,41 +34,28 @@ class VisDataParallel(nn.DataParallel):
         return r
 
 
-class ResFC(nn.Module):
+class VisDistDataParallel(nn.parallel.DistributedDataParallel):
     """
-    A fully connected two-stage residual layer, with the following goodies:
-        * batchnorm
-        * dropout
-        * uses a linear (affine) transform to line up mismatched input/output
-          dimensions
+    DataParallel hides the module's methods to avoid name conflicts
+    This class simply exposes a few key methods from the base classes
     """
-    def __init__(self, in_size, out_size, activation=F.relu, dropout_p=0.5):
-        super(ResFC, self).__init__()
 
-        self.in_size  = in_size
-        self.out_size = out_size
-        self.activation = activation
-        self.dropout_p  = dropout_p
+    def encode(self, *args):
+        return self.module.encode(*args)
 
-        self.t1 = nn.Linear(self.in_size, self.out_size, bias=False)
-        self.t2 = nn.Linear(self.out_size, self.out_size, bias=False)
-        self.bn = nn.InstanceNorm1d(self.out_size)
-        self.dp = nn.Dropout(p=dropout_p, inplace=False)
+    def decode(self, *args):
+        return self.module.decode(*args)
 
-        if self.in_size != self.out_size:
-            self.affine = nn.Linear(self.in_size, self.out_size, bias=False)
+    def loss_function(self, *args):
+        return self.module.loss_function(*args)
+
+    @property
+    def input_size(self):
+        if hasattr(self.module, 'input_size'):
+            r = self.module.input_size
         else:
-            self.affine = nn.Identity()
-
-        return
-
-    def forward(self, x):
-        r  = self.affine(x)
-        Fx = self.t2(self.activation(self.t1(x)))
-        nm = self.bn(Fx + r)
-        z  = self.dp(nm)
-        return z
-
+            r = None
+        return r
 
 
 class AE(nn.Module):
