@@ -90,7 +90,7 @@ def train(epoch, train_loader, model, device):
     jgl_loss   = 0.0
 
     for batch_idx, batch in enumerate(train_loader):
-   
+
         if type(batch) is tuple: 
             data = batch[0].squeeze()
         else:
@@ -116,7 +116,7 @@ def train(epoch, train_loader, model, device):
                     batch_idx * len(data), 
                     len(train_loader.dataset),
                     100. * batch_idx / len(train_loader),
-                    loss / len(data),
+                    loss.item() / len(data),
                     bce.item() / len(data), 
                     jgl.item() / len(data) ))
 

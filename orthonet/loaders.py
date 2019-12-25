@@ -115,8 +115,8 @@ def load_data(data_file, batch_size, max_points=None,
     """
 
     if data_file.split('/')[-1] == 'dsprites.h5':
-        train_ds = H5Dataset(data_file, shuffle=True, data_field='imgs')
-        test_ds  = H5Dataset(data_file, shuffle=True, data_field='imgs')
+        train_ds = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled')
+        test_ds  = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled')
     else:
         train_ds = H5Dataset(data_file, clip=(0.0, 1.0)) # bot data
         test_ds  = H5Dataset(data_file, clip=(0.0, 1.0))
