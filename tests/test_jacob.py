@@ -35,17 +35,18 @@ def Jy(x):
 # -----------------------------------------------
 
 
-def test_jacobian():
+def test_rev_jacobian():
     for i in range(10):
         x = torch.randn(2)
-        assert torch.allclose( Jy(x), jacob.jacobian(y, x, 3))
+        J = jacob.jacobian(y, x, 3, ad_mode='rev')
+        assert torch.allclose( Jy(x), J )
 
 
 def test_fwd_jacobian():
     for i in range(10):
         x = torch.randn(2)
-        J = jacob.fwd_jacobian(y, x, 3)
-        assert torch.allclose( Jy(x), J), (Jy(x), J)
+        J = jacob.jacobian(y, x, 3, ad_mode='fwd')
+        assert torch.allclose( Jy(x), J )
 
 
 def test_jacobian_grammian():
