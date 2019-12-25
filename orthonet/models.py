@@ -10,31 +10,7 @@ from torch.nn import functional as F
 from orthonet import jacob
 
 
-class VisDataParallel(nn.DataParallel):
-    """
-    DataParallel hides the module's methods to avoid name conflicts
-    This class simply exposes a few key methods from the base classes
-    """
-
-    def encode(self, *args):
-        return self.module.encode(*args)
-
-    def decode(self, *args):
-        return self.module.decode(*args)
-
-    def loss_function(self, *args):
-        return self.module.loss_function(*args)
-
-    @property
-    def input_size(self):
-        if hasattr(self.module, 'input_size'):
-            r = self.module.input_size
-        else:
-            r = None
-        return r
-
-
-class VisDistDataParallel(nn.parallel.DistributedDataParallel):
+class VisDDP(nn.parallel.DistributedDataParallel):
     """
     DataParallel hides the module's methods to avoid name conflicts
     This class simply exposes a few key methods from the base classes
