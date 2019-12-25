@@ -3,8 +3,8 @@ import torch
 from torch import autograd
 import numpy as np
 
-@torch.enable_grad()
-def jacobian(fxn, x, n_outputs, retain_graph=True):
+
+def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd'):
     """
     Compute the Jacobian of a function.
 
@@ -19,16 +19,37 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
     n_outputs : int
         The expected dimension of the output of net (dimension of range)
 
+    ad_mode : str
+        One of {'fwd', 'rev'} indicating the mode for automatic differentiation.
+        Results are identical for both, but for the Jacobian of a function
+        mapping R^n --> R^m, forward mode is generally faster if n < m, reverse
+        if n > m.
+
     Returns
     -------
     J : torch.Tensor
         The Jacobian d(fxn) / dx | x, shape (n_outputs, n)
     """
 
-    # the basic idea is to create N copies of the input
-    # and then ask for each of the N dimensions of the
-    # output... this allows us to compute J with pytorch's
-    # jacobian-vector engine
+    if ad_mode == 'fwd':
+        J = _fwd_jacobian(fxn, x, n_outputs, retain_graph)
+    elif ad_mode == 'rev':
+        J = _rev_jacobian(fxn, x, n_outputs, retain_graph)
+    else:
+        raise ValueError('Invalid autodiff mode: %s. Choose "fwd" or "rev"'
+                         '' % ad_mode)
+
+    return J
+
+
+@torch.enable_grad()
+def _rev_jacobian(fxn, x, n_outputs, retain_graph):
+    """
+    the basic idea is to create N copies of the input
+    and then ask for each of the N dimensions of the
+    output... this allows us to compute J with pytorch's
+    jacobian-vector engine
+    """
 
     # expand the input, one copy per output dimension
     n_outputs = int(n_outputs)
@@ -57,41 +78,21 @@ def jacobian(fxn, x, n_outputs, retain_graph=True):
 
 
 @torch.enable_grad()
-def fwd_jacobian(fxn, x, n_outputs, retain_graph=True):
+def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
     """
-    Compute the Jacobian of a function, using forward-mode AD.
-
-    Forward mode AD is faster for f : R^n --> R^m if m > n.
-
-    Parameters
-    ----------
-    fxn : function
-        The pytorch function (e.g. neural network object)
-
-    x : torch.Tensor
-        The input point at which to evaluate J
-
-    n_outputs : int
-        The expected dimension of the output of net (dimension of range)
-
-    Returns
-    -------
-    J : torch.Tensor
-        The Jacobian d(fxn) / dx | x, shape (n_outputs, n)
+    This implementation is very similar to the above, but with
+    one twist. To implement a forward-mode AD with rev-mode
+    calls, we first compute the rev-mode VJP for one vector (v)
+    then we call d/dv(VJP) `n_outputs` times, one per basis vector,
+    to obtain the Jacobian.
+    
+    This should be faster if `n_outputs` > "n_inputs"
 
     References
     ----------
     .[1] https://j-towns.github.io/2017/06/12/A-new-trick.html
          (Thanks to Jamie Townsend for this awesome trick!)
     """
-
-    # the implementation is very similar to the above, but with
-    # one twist. To implement a forward-mode AD with rev-mode
-    # calls, we first compute the rev-mode VJP for one vector (v)
-    # then we call d/dv(VJP) `n_outputs` times, one per basis vector,
-    # to obtain the Jacobian.
-    #
-    # This should be faster if `n_outputs` > "n_inputs"
 
     xd = x.detach().requires_grad_(True)
     n_inputs = int(xd.size(0))
@@ -150,7 +151,7 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
         The Jacobian-Grammian J^T * J ( size n x n, n=size(flat(x))) )
     """
 
-    J = fwd_jacobian(fxn, x, n_outputs)
+    J = jacobian(fxn, x, n_outputs)
     Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
@@ -249,7 +250,7 @@ def jf_loss(fxn, x, n_outputs, reduction='mean'):
     n = x.size(1)
     jf_accum = torch.zeros(n_outputs, n, device=x.device)
     for i in range(x.size(0)):
-        jf_accum += fwd_jacobian(fxn, x[i], n_outputs)
+        jf_accum += jacobian(fxn, x[i], n_outputs)
 
     loss = torch.sqrt( jf_accum.pow(2).sum() ) / float(n_outputs * n)
 

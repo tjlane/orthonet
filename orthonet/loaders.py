@@ -37,8 +37,6 @@ class H5Dataset(Dataset):
 
         self.data_field = data_field
         self.f_handle = h5py.File(in_file, 'r', libver='latest', swmr=True)
-        self.n_total = self.f_handle[self.data_field].shape[0]
-        self.shape = self.f_handle[self.data_field].shape[1:]
 
         self.shuffle = shuffle
         self.set_data_range(data_range)
@@ -59,16 +57,23 @@ class H5Dataset(Dataset):
         else:
             i = index + self.min_index
 
-        assert ( i >= self.min_index )
-        assert ( i <  self.max_index )
+        assert ( i >= self.min_index ), (i, index, self.min_index)
+        assert ( i <  self.max_index ), (i, index, self.max_index)
         item = self.f_handle[self.data_field][i]
         item = item.astype('float32').clip(*self.clip)
 
         return item
 
+    @property
+    def n_total(self):
+        return self.f_handle[self.data_field].shape[0]
+
+    @property
+    def shape(self):
+        return self.f_handle[self.data_field].shape[1:]
 
     def __len__(self):
-        return self.n_datapoints
+        return min(self.max_index - self.min_index, self.n_total)
 
 
     def set_data_range(self, data_range):
@@ -86,10 +91,8 @@ class H5Dataset(Dataset):
         # custom data range
         self.min_index = data_range[0]
         if data_range[1] is not None:
-            self.n_datapoints = self.max_index - self.min_index
             self.max_index = data_range[1]
         else:
-            self.n_datapoints = self.n_total
             self.max_index = self.n_total
 
         if self.shuffle:
@@ -106,7 +109,7 @@ class H5Dataset(Dataset):
 
 def load_data(data_file, batch_size, max_points=None,
               loader_kwargs={}, traintest_split=0.9,
-              loader=DataLoader):
+              dist_sampler_kwargs=None):
     """
     Load data into test/train loaders.
     """
@@ -124,30 +127,45 @@ def load_data(data_file, batch_size, max_points=None,
         size = len(train_ds)
     split = int(size * traintest_split)
 
+
     print('\tTrain/Test: %d/%d' % (split, size-split))
     train_ds.set_data_range((0, split))
     test_ds.set_data_range((split, size))
     print('shps:', len(train_ds), train_ds.shape, '/', len(test_ds), test_ds.shape)
 
-    train_loader = loader(train_ds,
-                          batch_size=batch_size, 
-                          shuffle=True, 
-                          **loader_kwargs)
+    
+    if dist_sampler_kwargs:
+       train_sampler = DistributedSampler(train_ds,
+                                          **dist_sampler_kwargs)
+       test_sampler  = DistributedSampler(test_ds,
+                                          **dist_sampler_kwargs)
+    else:
+        train_sampler = None
+        test_sampler  = None
 
-    test_loader = loader(test_ds,
-                         batch_size=batch_size, 
-                         shuffle=True, 
-                         **loader_kwargs)
+
+    train_loader = DataLoader(train_ds,
+                              batch_size=batch_size, 
+                              sampler=train_sampler,
+                              **loader_kwargs)
+
+    test_loader = DataLoader(test_ds,
+                             batch_size=batch_size,
+                             sampler=test_sampler,
+                             **loader_kwargs)
 
     data_shape = (len(train_ds) + len(test_ds),) + train_ds.shape
 
     return train_loader, test_loader, data_shape
 
 
-def load_mnist(batch_size, loader_kwargs={}):
+def load_mnist(batch_size, loader_kwargs={}, dist_sampler_kwargs=None):
     """
     MNIST, serial, will download if not already
     """
+
+    if dist_sampler_kwargs is None:
+        raise NotImplementedError('mnist parallel not in yet (but is easy)')
 
     train_loader = DataLoader(
         datasets.MNIST('./data', train=True, download=True,

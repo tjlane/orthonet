@@ -34,6 +34,7 @@ def test_data_range():
     make_test_h5()
     ds = loaders.H5Dataset('tmp.h5')
     ds.set_data_range([2,4])
+    assert len(ds) == 2
     item = ds[0]
     assert np.all(item == 2*np.ones([5,5]))
     item2 = ds[1]
