@@ -264,6 +264,9 @@ def main(device, args):
         if device == 0:
             torch.save(model, pjoin(args.resdir, 'checkpoints/model_%d.pt' % epoch))
 
+    # TJL not sure why needed, but is:
+    test_loss /= float(args.ngpu)
+
     print('>>>> Training Time: %.0f seconds' % (time.time() - start_time))
 
     # -------------------

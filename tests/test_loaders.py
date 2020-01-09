@@ -30,6 +30,17 @@ def test_h5dataset_basics():
     rm_test_h5()
     return
 
+def test_preload():
+    make_test_h5()
+    ds = loaders.H5Dataset('tmp.h5', preload=True)
+    item = ds[0]
+    assert len(ds) == 4
+    assert ds.shape == (5,5)
+    assert np.all(item == np.zeros([5,5]))
+    ds.close()
+    rm_test_h5()
+    return
+
 def test_data_range():
     make_test_h5()
     ds = loaders.H5Dataset('tmp.h5')

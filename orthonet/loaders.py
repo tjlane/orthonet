@@ -12,7 +12,7 @@ from torchvision import datasets, transforms
 class H5Dataset(Dataset):
 
     def __init__(self, in_file, shuffle=False, data_range=(0, None),
-                 data_field='data', clip=(-1e8, 1e8)):
+                 data_field='data', clip=None, preload=False):
         """
         Parameters
         ----------
@@ -30,13 +30,18 @@ class H5Dataset(Dataset):
             The path to the data object inside the HDF5 file. Default: "/data".
 
         clip : (float, float)
-            Values to clip the input data to. Default: (-1e8, 1e8).
+            Values to clip the input data to. Default: None.
         """
 
         super(H5Dataset, self).__init__()
 
         self.data_field = data_field
         self.f_handle = h5py.File(in_file, 'r', libver='latest', swmr=True)
+
+        if preload:
+            self._data = np.array(self.f_handle[self.data_field]).astype('float32')
+        else:
+            self._data = self.f_handle[self.data_field]
 
         self.shuffle = shuffle
         self.set_data_range(data_range)
@@ -59,8 +64,10 @@ class H5Dataset(Dataset):
 
         assert ( i >= self.min_index ), (i, index, self.min_index)
         assert ( i <  self.max_index ), (i, index, self.max_index)
-        item = self.f_handle[self.data_field][i]
-        item = item.astype('float32').clip(*self.clip)
+        item = self._data[i]
+        item = item.astype('float32') # .clip(*self.clip)
+        if self.clip:
+            item = item.clip(*self.clip)
 
         return item
 
@@ -74,7 +81,6 @@ class H5Dataset(Dataset):
 
     def __len__(self):
         return min(self.max_index - self.min_index, self.n_total)
-
 
     def set_data_range(self, data_range):
         """
@@ -100,11 +106,9 @@ class H5Dataset(Dataset):
                                                             self.max_index))
         return
 
-
     def close(self):
         self.f_handle.close()
         return
-
 
 
 def load_data(data_file, batch_size, max_points=None,
@@ -115,8 +119,8 @@ def load_data(data_file, batch_size, max_points=None,
     """
 
     if data_file.split('/')[-1] == 'dsprites.h5':
-        train_ds = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled')
-        test_ds  = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled')
+        train_ds = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled', preload=False)
+        test_ds  = H5Dataset(data_file, shuffle=False, data_field='imgs_shuffled', preload=False)
     else:
         train_ds = H5Dataset(data_file, clip=(0.0, 1.0)) # bot data
         test_ds  = H5Dataset(data_file, clip=(0.0, 1.0))
