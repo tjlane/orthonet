@@ -199,13 +199,10 @@ def main(device, args):
 
     # if we are running on many GPUs, distribute data
     if args.distributed:
-        sampler_kwargs = {'num_replicas' : args.world_size,
-                          'rank'         : device}
         loader_kwargs = {'num_workers': 0, 
                          'pin_memory' : True,
                          'shuffle'    : False}
     else:
-        sampler_kwargs = None
         loader_kwargs = {'num_workers': 2, 
                          'pin_memory' : True,
                          'shuffle' :    True}
@@ -216,16 +213,15 @@ def main(device, args):
                         loader_kwargs=loader_kwargs)
 
     elif args.data_file == 'sprites':
-        ll = load_data('/scratch/tjlane/dsprites.h5', 
-                       args.batch_size,
-                       dist_sampler_kwargs=sampler_kwargs,
-                       loader_kwargs=loader_kwargs)
+        ll = load_dsprites(args.batch_size,
+                           device, # rank
+                           args.world_size,
+                           preload=False)
 
     else:
-        ll = load_data(args.data_file, 
-                       args.batch_size,
-                       dist_sampler_kwargs=sampler_kwargs,
-                       loader_kwargs=loader_kwargs)
+        ll = load_bot(args.data_file, 
+                      args.batch_size,
+                      loader_kwargs=loader_kwargs)
 
 
     train_loader, test_loader, data_shape = ll # unpack
@@ -323,10 +319,10 @@ if __name__ == "__main__":
         if not os.path.exists('/scratch/tjlane'):
             os.mkdir('/scratch/tjlane')
 
-        if not os.path.exists('/scratch/tjlane/dsprites.h5'):
-            print('\ncopying sprites data to scratch...')
-            r = os.system('cp /u/xl/tjlane/ortho/sprites/dsprites.h5 /scratch/tjlane/dsprites.h5')
-            print('... done.\n')
+        #if not os.path.exists('/scratch/tjlane/dsprites.h5'):
+        print('\ncopying sprites data to scratch...')
+        r = os.system('cp /u/xl/tjlane/ortho/sprites/dsprites.h5 /scratch/tjlane/dsprites.h5')
+        print('... done.\n')
 
     # --------------------------
     # device setup  

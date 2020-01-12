@@ -143,6 +143,14 @@ def test_distributive():
 
     return
 
+def test_pin_memory():
+    n_dpts = 47
+    ds = np.arange(n_dpts)
+    ddl = loaders.DistributedDataLoader(ds, 0, 1, batch_size=1, pin_memory=True)
+    for i,b in enumerate(ddl):
+        assert np.all(b == ds[i])
+    return
+
 def test_integration():
 
     make_test_h5()
