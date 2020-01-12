@@ -80,8 +80,12 @@ def fwd_pass(model, data):
 
 def train(epoch, train_loader, model, device):
 
+    lr = 1e-3
+    if epoch > 30:
+        lr = 1e-4
+
     optimizer = torch.optim.Adam(model.parameters(), 
-                                 lr=1e-3, 
+                                 lr=lr, 
                                  weight_decay=1e-3)
 
     model.train()
@@ -160,7 +164,7 @@ def test(epoch, test_loader, model, device):
            test_jgl / len(test_loader.dataset) ))
 
 
-    return test_loss
+    return avg_loss
 
 
 def main(device, args):
@@ -210,6 +214,13 @@ def main(device, args):
     if args.data_file == 'mnist':
         ll = load_mnist(args.batch_size, 
                         loader_kwargs=loader_kwargs)
+
+    elif args.data_file == 'sprites':
+        ll = load_data('/scratch/tjlane/dsprites.h5', 
+                       args.batch_size,
+                       dist_sampler_kwargs=sampler_kwargs,
+                       loader_kwargs=loader_kwargs)
+
     else:
         ll = load_data(args.data_file, 
                        args.batch_size,
@@ -264,9 +275,6 @@ def main(device, args):
         if device == 0:
             torch.save(model, pjoin(args.resdir, 'checkpoints/model_%d.pt' % epoch))
 
-    # TJL not sure why needed, but is:
-    test_loss /= float(args.ngpu)
-
     print('>>>> Training Time: %.0f seconds' % (time.time() - start_time))
 
     # -------------------
@@ -310,6 +318,15 @@ if __name__ == "__main__":
 
         if not os.path.exists(dirc):
             os.mkdir(dirc)
+
+    if args.data_file == 'sprites':
+        if not os.path.exists('/scratch/tjlane'):
+            os.mkdir('/scratch/tjlane')
+
+        if not os.path.exists('/scratch/tjlane/dsprites.h5'):
+            print('\ncopying sprites data to scratch...')
+            r = os.system('cp /u/xl/tjlane/ortho/sprites/dsprites.h5 /scratch/tjlane/dsprites.h5')
+            print('... done.\n')
 
     # --------------------------
     # device setup  
