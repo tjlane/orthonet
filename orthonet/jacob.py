@@ -98,7 +98,7 @@ def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
     n_inputs = int(xd.size(0))
 
     # first, compute *any* VJP 
-    v = torch.ones(1, n_outputs, device=x.device, requires_grad=True)
+    v = torch.ones(n_outputs, device=x.device, requires_grad=True)
     y = fxn(xd.view(1,n_inputs)).view(n_outputs)
 
     if y.size(0) != n_outputs:
@@ -124,7 +124,7 @@ def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
                           retain_graph=retain_graph,
                           create_graph=True,  # for higher order derivatives
                           )
-        J.append(Ji[0][0])
+        J.append(Ji[0])
 
     return torch.stack(J).t()
 
