@@ -35,7 +35,9 @@ def test_h5dataset_basics():
 
 def test_preload():
     make_test_h5()
-    ds = loaders.H5Dataset('tmp.h5', preload=True)
+    ds = loaders.H5Dataset('tmp.h5')
+    ds.preload()
+    assert type(ds._data) == np.ndarray
     item = ds[0]
     assert len(ds) == 4
     assert ds.shape == (5,5)
@@ -46,6 +48,8 @@ def test_preload():
 
 def test_data_range():
     make_test_h5()
+
+    # non-preloading
     ds = loaders.H5Dataset('tmp.h5')
     ds.set_data_range([2,4])
     assert len(ds) == 2
@@ -54,21 +58,46 @@ def test_data_range():
     item2 = ds[1]
     assert np.all(item2 == 3*np.ones([5,5]))
     ds.close()
+
+    # preloading
+    ds = loaders.H5Dataset('tmp.h5')
+    ds.preload()
+    ds.set_data_range([2,4])
+    assert len(ds) == 2
+    item = ds[0]
+    assert np.all(item == 2*np.ones([5,5]))
+    item2 = ds[1]
+    assert np.all(item2 == 3*np.ones([5,5]))
+    ds.close()
+
     rm_test_h5()
     return
 
-def test_shuffle():
+def test_slice():
     make_test_h5()
-    ds = loaders.H5Dataset('tmp.h5', shuffle=True)
-    item = ds[0]
-    val = ds._permutation[0]
-    assert np.all(item == val * np.ones([5,5]))
-    ds.set_data_range([2,3]) # only one item, val=2
-    item = ds[0]
-    assert np.all(item == 2*np.ones([5,5]))
+
+    # non-preloading
+    ds = loaders.H5Dataset('tmp.h5')
+    ds.set_data_range([1,5])
+    assert len(ds) == 4
+    item = ds[0:2]
+    assert np.all(item[0] == 1*np.ones([5,5]))
+    assert np.all(item[1] == 2*np.ones([5,5]))
     ds.close()
+    
+    # preloading
+    ds = loaders.H5Dataset('tmp.h5')
+    ds.preload()
+    ds.set_data_range([1,5])
+    assert len(ds) == 4
+    item = ds[0:2]
+    assert np.all(item[0] == 1*np.ones([5,5]))
+    assert np.all(item[1] == 2*np.ones([5,5]))
+    ds.close()
+
     rm_test_h5()
     return
+
 
 def test_clip():
     make_test_h5()
@@ -96,7 +125,7 @@ def test_basic():
     assert len(ddl) == n_dpts
 
     for i,b in enumerate(ddl):
-        assert np.all(b == ds[i])
+        assert np.all(b.numpy() == ds[i])
 
     return
 
@@ -112,7 +141,7 @@ def test_batch_size():
     assert len(ddl) == n_dpts // 3 + 1 # +1 for final batch
 
     for i,b in enumerate(ddl):
-        assert np.all(b == ds[i*3:(i+1)*3])
+        assert np.all(b.numpy() == ds[i*3:(i+1)*3])
 
     return
 
@@ -136,10 +165,10 @@ def test_distributive():
         assert ddl_2.data_range == (st, sp)
         
         for i,b in enumerate(ddl_1):
-            assert np.all(b == ds[st + i])
+            assert np.all(b.numpy() == ds[st + i])
 
         for i,b in enumerate(ddl_2):
-            assert np.all(b == ds[st + i*2 : st + (i+1)*2])
+            assert np.all(b.numpy() == ds[st + i*2 : st + (i+1)*2])
 
     return
 
@@ -148,26 +177,27 @@ def test_pin_memory():
     ds = np.arange(n_dpts)
     ddl = loaders.DistributedDataLoader(ds, 0, 1, batch_size=1, pin_memory=True)
     for i,b in enumerate(ddl):
-        assert np.all(b == ds[i])
+        assert np.all(b.numpy() == ds[i])
     return
 
 def test_integration():
 
     make_test_h5()
 
-    ds = loaders.H5Dataset('tmp.h5', preload=True)
+    ds = loaders.H5Dataset('tmp.h5')
     ddl = loaders.DistributedDataLoader(ds, 0, 2, batch_size=2)
     for i,b in enumerate(ddl):
-        assert np.all(b[0] == i)
-        assert np.all(b[1] == i+1)
+        assert np.all(b[0].numpy() == i)
+        assert np.all(b[1].numpy() == i+1)
         assert b.shape == (2,5,5)
     ds.close()
 
-    ds2 = loaders.H5Dataset('tmp.h5', preload=False)
+    ds2 = loaders.H5Dataset('tmp.h5')
+    ds2.preload()
     ddl2 = loaders.DistributedDataLoader(ds2, 0, 2, batch_size=2)
     for i,b in enumerate(ddl2):
-        assert np.all(b[0] == i)
-        assert np.all(b[1] == i+1)
+        assert np.all(b[0].numpy() == i)
+        assert np.all(b[1].numpy() == i+1)
         assert b.shape == (2,5,5)
     ds2.close()
  
@@ -176,16 +206,16 @@ def test_integration():
 
 def test_epoch_style_use():
     make_test_h5()
-    ds2 = loaders.H5Dataset('tmp.h5', preload=False)
-    ddl2 = loaders.DistributedDataLoader(ds2, 0, 2, batch_size=2)
+    ds = loaders.H5Dataset('tmp.h5')
+    ddl = loaders.DistributedDataLoader(ds, 0, 2, batch_size=2)
 
     for epoch in range(5):
-        for i,b in enumerate(ddl2):
-            assert np.all(b[0] == i)
-            assert np.all(b[1] == i+1)
+        for i,b in enumerate(ddl):
+            assert np.all(b[0].numpy() == i)
+            assert np.all(b[1].numpy() == i+1)
             assert b.shape == (2,5,5)
 
-    ds2.close()
+    ds.close()
     rm_test_h5()
     return
 
@@ -193,11 +223,11 @@ def test_PDDL():
 
     make_test_h5()
 
-    ds = loaders.H5Dataset('tmp.h5', preload=True)
+    ds = loaders.H5Dataset('tmp.h5')
     ddl = loaders.PreloadingDDL(ds, 0, 2, batch_size=2)
     for i,b in enumerate(ddl):
-        assert np.all(b[0] == i)
-        assert np.all(b[1] == i+1)
+        assert np.all(b[0].numpy() == i)
+        assert np.all(b[1].numpy() == i+1)
         assert b.shape == (2,5,5)
     ds.close()
 

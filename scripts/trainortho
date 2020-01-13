@@ -14,7 +14,7 @@ import torch.distributed as dist
 
 from orthonet import visual
 from orthonet import jacob
-from orthonet.loaders import load_data, load_mnist
+from orthonet.loaders import load_bot, load_mnist, load_dsprites
 from orthonet.models import AE, VAE, SpritesVAE, MnistVAE, VisDDP
 
 # fix random seeds for debugging
@@ -98,6 +98,7 @@ def train(epoch, train_loader, model, device):
         if type(batch) is tuple: 
             data = batch[0].squeeze()
         else:
+            print('***', batch.shape)
             data = batch
 
         data = data.cuda(non_blocking=True)
@@ -216,7 +217,7 @@ def main(device, args):
         ll = load_dsprites(args.batch_size,
                            device, # rank
                            args.world_size,
-                           preload=False)
+                           preload=True)
 
     else:
         ll = load_bot(args.data_file, 
@@ -347,6 +348,7 @@ if __name__ == "__main__":
     # >>> one GPU or CPU
     else:
         args.distributed = False
+        args.world_size = 1
         device_type = "cuda" if args.cuda else "cpu"
         print("Device type: %s" % device_type)
         main(0, args)

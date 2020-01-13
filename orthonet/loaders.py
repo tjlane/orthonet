@@ -12,16 +12,13 @@ from torchvision import datasets, transforms
 
 class H5Dataset(Dataset):
 
-    def __init__(self, in_file, shuffle=False, data_range=(0, None),
-                 data_field='data', clip=None, preload=False, dtype='float32'):
+    def __init__(self, in_file, data_range=(0, None),
+                 data_field='data', clip=None, dtype='float32'):
         """
         Parameters
         ----------
         in_file : str
             Path to the HDF5 file on disk.
-
-        shuffle: bool
-            Whether or not to shuffle the data randomly.
 
         data_range : (int, int)
             Limit the data access to a subset of the data, with min/max
@@ -40,45 +37,33 @@ class H5Dataset(Dataset):
         self.data_field = data_field
         self.f_handle = h5py.File(in_file, 'r', libver='latest', swmr=True)
 
-        self.preload = preload
-        self.shuffle = shuffle
-        self.set_data_range(data_range)
+        self.set_data_range(data_range) # sets _data
         self.clip = clip
-
-        if self.preload:
-            self._data = self.f_handle[self.data_field][self.min_index:self.max_index].astype(self.dtype)
-        else:
-            self._data = self.f_handle[self.data_field]
 
         return
 
 
     def __getitem__(self, index):
-
         # NOTE index may be a slice object
 
-        if type(index) == int:
-            if index < 0:
-                raise NotImplementedError('negative indicies not yet supported')
-
-        if self.shuffle:
-            i = self._permutation[index]
-            # with current h5py interface, will be an error IF all:
-            #  * self.shuffle = True
-            #  * batch_size > 1
-            #  * self.preload = False
-            #     because h5py does not allow integer indexing
-            #     do not fix for now, as update to h5py is coming
-
+        if isinstance(self._data, np.ndarray):
+            offset = 0
         else:
-            if type(index) == slice:
-                i = slice(index.start - self.min_index,
-                          index.stop  - self.min_index)
-            else:
-                i = index + self.min_index # ints, arrays
+            offset = self.min_index
+
+        if type(index) is int:
+            i = index + offset # ints, arrays
+            if index < 0:
+                raise NotImplementedError('negative indicies not supported')
+        elif type(index) is slice:
+                i = slice(index.start + offset,
+                          index.stop  + offset)
+        else:
+            raise TypeError('int and slice indices are only safe types as of now')
             
         item = self._data[i]
-        item = item.astype(self.dtype)
+        if item.dtype != self.dtype:
+            item = item.astype(self.dtype)
         if self.clip:
             item = item.clip(*self.clip)
 
@@ -118,13 +103,13 @@ class H5Dataset(Dataset):
         else:
             self.max_index = self.n_total
 
-        if self.shuffle:
-            self._permutation = np.random.permutation(range(self.min_index,
-                                                            self.max_index))
+        self._data = self.f_handle[self.data_field]
 
-        if self.preload:
-            self._data = self.f_handle[self.data_field][self.min_index:self.max_index].astype(self.dtype)
+        return
 
+
+    def preload(self):
+        self._data = self.f_handle[self.data_field][self.min_index:self.max_index].astype(self.dtype)
         return
 
 
@@ -137,7 +122,7 @@ class DistributedDataLoader:
 
     def __init__(self, dataset, rank, size, batch_size=1, pin_memory=False):
 
-        self._dataset = dataset
+        self.dataset = dataset
         self.rank = rank
         self.size = size
         self.batch_size = batch_size
@@ -153,9 +138,9 @@ class DistributedDataLoader:
         # the data to pull from the dataset
         # note: this is not the batch range
         slc = (self.rank + self.epoch) % self.size
-        slc_size = ceil(len(self._dataset) / self.size)
+        slc_size = ceil(len(self.dataset) / self.size)
         start = slc * slc_size
-        stop  = min((slc+1) * slc_size, len(self._dataset))
+        stop  = min((slc+1) * slc_size, len(self.dataset))
         return start, stop
 
 
@@ -171,12 +156,15 @@ class DistributedDataLoader:
 
         for i in range(self.n_iter):
             if self.batch_size == 1:
-                data =self._dataset[start + i]
+                data =self.dataset[start + i]
             else:
                 b_start = start + i * self.batch_size
                 b_stop  = min(start + (i+1) * self.batch_size, stop)
                 s = slice(b_start, b_stop)
-                data = self._dataset[s]
+                data = self.dataset[s]
+
+            if not type(data) == torch.Tensor:
+                data = torch.tensor(data)
 
             if self.pin_memory:
                 data = pm.pin_memory(data)
@@ -196,12 +184,10 @@ class PreloadingDDL(DistributedDataLoader):
 
     def __init__(self, *args, **kwargs):
         super(PreloadingDDL, self).__init__(*args, **kwargs)
+        self._data_range = None
 
-        if not isinstance(self._dataset, H5Dataset):
+        if not isinstance(self.dataset, H5Dataset):
             raise TypeError('PreloadingDDL requires an H5Dataset to function')
-
-        if not self._dataset.preload == True:
-            raise ValueError('PreloadingDDL H5Dataset.preload = True')
 
         return
 
@@ -216,16 +202,24 @@ class PreloadingDDL(DistributedDataLoader):
         """
 
         start, stop = self.data_range
-        self._dataset.set_data_range((start, stop))
+
+        # if the data range is new, preload data
+        if self._data_range != (start, stop):
+            self.dataset.set_data_range((start, stop))
+            self.dataset.preload()
+            self._data_range = (start, stop)
 
         for i in range(self.n_iter):
             if self.batch_size == 1:
-                data = self._dataset[i]
+                data = self.dataset[i]
             else:
                 b_start = i * self.batch_size
-                b_stop  = min((i+1) * self.batch_size, len(self._dataset))
+                b_stop  = min((i+1) * self.batch_size, len(self.dataset))
                 s = slice(b_start, b_stop)
-                data = self._dataset[s]
+                data = self.dataset[s]
+
+            if not type(data) == torch.Tensor:
+                data = torch.tensor(data)
 
             if self.pin_memory:
                 data = pm.pin_memory(data)
@@ -295,11 +289,11 @@ def load_mnist(batch_size, loader_kwargs={}):
     return train_loader, test_loader, data_shape
 
 
-def load_dsprites(batch_size, rank=0, size=1, preload=False):
+def load_dsprites(batch_size, rank=0, size=1, preload=False, pin_memory=True):
 
     data_file = '/scratch/tjlane/dsprites.h5'
-    train_ds = H5Dataset(data_file, data_field='imgs_shuffled_train', preload=preload)
-    test_ds  = H5Dataset(data_file, data_field='imgs_shuffled_test',  preload=preload)
+    train_ds = H5Dataset(data_file, data_field='imgs_shuffled_train')
+    test_ds  = H5Dataset(data_file, data_field='imgs_shuffled_test')
 
     if preload:
         DDL = PreloadingDDL
@@ -307,11 +301,13 @@ def load_dsprites(batch_size, rank=0, size=1, preload=False):
         DDL = DistributedDataLoader
     
     # each rank gets a unique training set
-    train_loader = DDL(train_ds, rank, size, batch_size=batch_size)
+    train_loader = DDL(train_ds, rank, size, batch_size=batch_size, pin_memory=pin_memory)
 
     # but identical test sets
-    test_loader = DDL(test_ds, 0, 1, batch_size=batch_size)
+    test_loader = DDL(test_ds, 0, 1, batch_size=batch_size, pin_memory=pin_memory)
 
+    print('DataLoader rank %d :: preload=%d || train : %d / test : %d' % (rank, int(preload),
+                                                                          len(train_ds), len(test_ds)))
     data_shape = (len(train_ds) + len(test_ds),) + train_ds.shape
 
     return train_loader, test_loader, data_shape 
