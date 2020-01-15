@@ -54,67 +54,67 @@ class AE(nn.Module):
         self.encode_conv = nn.Sequential(
                             # input size is 1 x 33 x 33
                             nn.Conv2d(1, 4, 4, stride=2, padding=4, bias=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 4 x 16 x 16
                             nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 16 x 8 x 8
                             nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 32 x 4 x 4
                             nn.Conv2d(32, 64, 4, stride=2, padding=0, bias=False),
                             nn.BatchNorm2d(64, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True)
+                            nn.LeakyReLU(0.2, inplace=False)
                             # --> into FC is 64 x 1 x 1
                           )
         self.encode_fc  = nn.Sequential(
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
 
         self.decode_fc   = nn.Sequential(
                             nn.Linear(self.latent_size, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.decode_conv = nn.Sequential(
 
                             # input is 64 x 1 x 1
                             nn.ConvTranspose2d(64, 32, 4, stride=1, padding=0, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 32 x 4 x 4
                             nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 16 x 8 x 8
                             nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(8, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 8 x 4 x 4
                             nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.ConvTranspose2d(4, 1, 4, stride=1, padding=1, bias=False),
                             nn.Sigmoid()
                         )
@@ -134,7 +134,7 @@ class AE(nn.Module):
 
     def forward(self, x):
         z = self.encode(x.view(-1, self.input_size))
-        return self.decode(z)
+        return self.decode(z), z
 
     @staticmethod
     def loss_function(x, recon_x):
@@ -161,76 +161,76 @@ class VAE(nn.Module):
         self.shared     = nn.Sequential(
                             # input size is 1 x 33 x 33
                             nn.Conv2d(1, 4, 4, stride=2, padding=4, bias=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 4 x 16 x 16
                             nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 16 x 8 x 8
                             nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 32 x 4 x 4
                             nn.Conv2d(32, 64, 4, stride=2, padding=0, bias=False),
                             nn.BatchNorm2d(64, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True)
+                            nn.LeakyReLU(0.2, inplace=False)
                             # --> into FC is 64 x 1 x 1
                           )
         self.mu_branch  = nn.Sequential(
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.var_branch = nn.Sequential(
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
 
 
         # decoder
         self.decode_fc   = nn.Sequential(
                             nn.Linear(self.latent_size, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                             nn.Linear(64, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.decode_conv = nn.Sequential(
 
                             # input is 64 x 1 x 1
                             nn.ConvTranspose2d(64, 32, 4, stride=1, padding=0, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                     
                             # size 32 x 4 x 4
                             nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                     
                             # size 16 x 8 x 8
                             nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(8, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                     
                             # size 8 x 4 x 4
                             nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
@@ -281,85 +281,80 @@ class VAE(nn.Module):
 
 class SpritesVAE(VAE):
 
-    def __init__(self, input_shape, latent_size, beta=1.0):
+    def __init__(self, input_shape, latent_size, beta=1.0, n=4):
         super(SpritesVAE, self).__init__(input_shape, latent_size, beta)
 
-        self.dropout_p = 0.25
+        # n = feature multiplier
+
+        self.conv_biases = True  # use if batchnorm disabled...
 
         # encoder
         self.shared     = nn.Sequential(
                             # input size is 1 x 64 x 64
-                            nn.Conv2d(1, 4, 4, stride=2, padding=1, bias=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Conv2d(1, 4*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(4*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
-                            # current size is 4 x 32 x 32
-                            nn.Conv2d(4, 16, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            # current size is 4n x 32 x 32
+                            nn.Conv2d(4*n, 8*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(8*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
-                            # current size is 16 x 16 x 16
-                            nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            # current size is 8n x 16 x 16
+                            nn.Conv2d(8*n, 16*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(16*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 32 x 8 x 8
-                            nn.Conv2d(32, 32, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            nn.Conv2d(16*n, 32*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(32*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 32 x 4 x 4
-                            nn.Conv2d(32, 32, 4, stride=2, padding=0, bias=False),
-                            nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p)
+                            nn.Conv2d(32*n, 64*n, 4, stride=2, padding=0, bias=self.conv_biases),
+                            #nn.BatchNorm2d(64*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
-                            # --> into FC is 32 x 1 x 1
+                            # --> into FC is 64 x 1 x 1
                           )
         self.mu_branch  = nn.Sequential(
-                            nn.Linear(32, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64*n, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.var_branch = nn.Sequential(
-                            nn.Linear(32, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(64*n, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
 
         # decoder
         self.decode_fc   = nn.Sequential(
-                            nn.Linear(self.latent_size, 32),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.Linear(self.latent_size, 64*n),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.decode_conv = nn.Sequential(
 
-                            # input is 32 x 1 x 1
-                            nn.ConvTranspose2d(32, 32, 4, stride=1, padding=0, bias=False),
-                            nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            # input is 64 x 1 x 1
+                            nn.ConvTranspose2d(64*n, 32*n, 4, stride=1, padding=0, bias=self.conv_biases),
+                            #nn.BatchNorm2d(32*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 32 x 4 x 4
-                            nn.ConvTranspose2d(32, 32, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            nn.ConvTranspose2d(32*n, 16*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(16*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
-                            # size 32 x 8 x 8
-                            nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            # size 16 x 8 x 8
+                            nn.ConvTranspose2d(16*n, 8*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(8*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
-                            # size 16 x 16 x 16
-                            nn.ConvTranspose2d(16, 4, 4, stride=2, padding=1, bias=False),
-                            nn.BatchNorm2d(4, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
-                            #nn.Dropout2d(self.dropout_p),
+                            # size 8 x 16 x 16
+                            nn.ConvTranspose2d(8*n, 4*n, 4, stride=2, padding=1, bias=self.conv_biases),
+                            #nn.BatchNorm2d(4*n, track_running_stats=False, affine=False),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 4 x 32 x 32
-                            nn.ConvTranspose2d(4, 1, 4, stride=2, padding=1, bias=False),
+                            nn.ConvTranspose2d(4*n, 1, 4, stride=2, padding=1, bias=self.conv_biases),
 
                             # output size 1 x 64 x 64
                             nn.Sigmoid()
@@ -379,66 +374,66 @@ class MnistVAE(VAE):
                             # input size is 1 x 28 x 28
                             nn.Conv2d(1, 4, 4, stride=2, padding=3, bias=False),
                             nn.BatchNorm2d(4, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 4 x 16 x 16
                             nn.Conv2d(4, 8, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(8, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 8 x 16 x 16
                             nn.Conv2d(8, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 16 x 8 x 8
                             nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 32 x 4 x 4
                             nn.Conv2d(32, 64, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(64, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # current size is 64 x 1 x 1
                             # --> into FC
                           )
         self.mu_branch  = nn.Sequential(
                             nn.Linear(64, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.var_branch = nn.Sequential(
                             nn.Linear(64, self.latent_size),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
 
         # decoder
         self.decode_fc   = nn.Sequential(
                             nn.Linear(self.latent_size, 64),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
                           )
         self.decode_conv = nn.Sequential(
 
                             # input is 64 x 1 x 1
                             nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(32, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 32 x 4 x 4
                             nn.ConvTranspose2d(32, 16, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(16, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 16 x 8 x 8
                             nn.ConvTranspose2d(16, 8, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(8, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # size 8 x 16 x 16
                             nn.ConvTranspose2d(8, 4, 4, stride=2, padding=1, bias=False),
                             nn.BatchNorm2d(4, track_running_stats=False),
-                            nn.LeakyReLU(0.2, inplace=True),
+                            nn.LeakyReLU(0.2, inplace=False),
 
                             # output size 4 x 28 x 28
                             nn.ConvTranspose2d(4, 1, 4, stride=2, padding=3, bias=False),
