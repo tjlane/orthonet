@@ -135,12 +135,19 @@ class DistributedDataLoader:
 
     @property
     def data_range(self):
+
+        if isinstance(self.dataset, H5Dataset):
+            # len here changes if we set range
+            n_total = self.dataset.n_total
+        else:
+            n_total = len(self.dataset) # np.array, etc
+
         # the data to pull from the dataset
         # note: this is not the batch range
         slc = (self.rank + self.epoch) % self.size
-        slc_size = ceil(len(self.dataset) / self.size)
+        slc_size = ceil(n_total / self.size)
         start = slc * slc_size
-        stop  = min((slc+1) * slc_size, len(self.dataset))
+        stop  = min((slc+1) * slc_size, n_total)
         return start, stop
 
 
@@ -156,7 +163,7 @@ class DistributedDataLoader:
 
         for i in range(self.n_iter):
             if self.batch_size == 1:
-                data =self.dataset[start + i]
+                data = self.dataset[start + i]
             else:
                 b_start = start + i * self.batch_size
                 b_stop  = min(start + (i+1) * self.batch_size, stop)
@@ -185,9 +192,23 @@ class PreloadingDDL(DistributedDataLoader):
     def __init__(self, *args, **kwargs):
         super(PreloadingDDL, self).__init__(*args, **kwargs)
         self._data_range = None
+        self._preload()
 
         if not isinstance(self.dataset, H5Dataset):
             raise TypeError('PreloadingDDL requires an H5Dataset to function')
+
+        return
+
+
+    def _preload(self):
+
+        start, stop = self.data_range
+
+        # if the data range is new, preload data
+        if self._data_range != (start, stop):
+            self.dataset.set_data_range((start, stop))
+            self.dataset.preload()
+            self._data_range = (start, stop)
 
         return
 
@@ -202,12 +223,7 @@ class PreloadingDDL(DistributedDataLoader):
         """
 
         start, stop = self.data_range
-
-        # if the data range is new, preload data
-        if self._data_range != (start, stop):
-            self.dataset.set_data_range((start, stop))
-            self.dataset.preload()
-            self._data_range = (start, stop)
+        self._preload()
 
         for i in range(self.n_iter):
             if self.batch_size == 1:
@@ -226,8 +242,10 @@ class PreloadingDDL(DistributedDataLoader):
 
             yield data
 
-# ^^^ general useful code
-# --- below here is project/cluster specific
+
+
+# ^^^ general useful code above ^^^
+# --- below here is project/cluster specific ----------------------------------
 
 
 def load_bot(data_file, batch_size, max_points=None,
@@ -306,8 +324,9 @@ def load_dsprites(batch_size, rank=0, size=1, preload=False, pin_memory=True):
     # but identical test sets
     test_loader = DDL(test_ds, 0, 1, batch_size=batch_size, pin_memory=pin_memory)
 
-    print('DataLoader rank %d :: preload=%d || train : %d / test : %d' % (rank, int(preload),
-                                                                          len(train_ds), len(test_ds)))
+    print('DataLoader rank %d :: %s :: preload=%d || train : %d / test : %d'
+          '' % (rank, str(train_loader.data_range), int(preload), len(train_ds), len(test_ds)))
+
     data_shape = (len(train_ds) + len(test_ds),) + train_ds.shape
 
     return train_loader, test_loader, data_shape 
