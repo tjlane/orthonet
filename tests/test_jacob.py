@@ -40,15 +40,17 @@ def test_rev_jacobian():
         x = torch.randn(2)
         J = jacob.jacobian(y, x, 3, ad_mode='rev')
         assert torch.allclose( Jy(x), J )
+        J_frugal = jacob.jacobian(y, x, 3, ad_mode='rev', memfrugal=True)
+        assert torch.allclose( Jy(x), J_frugal )
 
 
 def test_fwd_jacobian():
     for i in range(10):
         x = torch.randn(2)
         J = jacob.jacobian(y, x, 3, ad_mode='fwd')
-        print(J)
-        print(Jy(x))
         assert torch.allclose( Jy(x), J )
+        J_frugal = jacob.jacobian(y, x, 3, ad_mode='fwd', memfrugal=True)
+        assert torch.allclose( Jy(x), J_frugal )
 
 
 def test_jacobian_grammian():
@@ -60,5 +62,6 @@ def test_jacobian_grammian():
 
 if __name__ == '__main__':
     test_fwd_jacobian()
+    #test_rev_jacobian()
     #test_jacobian_grammian()
 

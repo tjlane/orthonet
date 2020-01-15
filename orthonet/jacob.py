@@ -1,10 +1,10 @@
 
 import torch
 from torch import autograd
-import numpy as np
 
 
-def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd'):
+@torch.enable_grad()
+def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd', memfrugal=False):
     """
     Compute the Jacobian of a function.
 
@@ -25,6 +25,10 @@ def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd'):
         mapping R^n --> R^m, forward mode is generally faster if n < m, reverse
         if n > m.
 
+    memfrugal : bool
+        If true, use a looping implementation that consumes significantly less
+        memory but at the cost of increased compute time.
+
     Returns
     -------
     J : torch.Tensor
@@ -32,9 +36,15 @@ def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd'):
     """
 
     if ad_mode == 'fwd':
-        J = _fwd_jacobian(fxn, x, n_outputs, retain_graph)
+        if memfrugal:
+            J = _fwd_jacobian_simple(fxn, x, n_outputs, retain_graph)
+        else:
+            J = _fwd_jacobian(fxn, x, n_outputs, retain_graph)
     elif ad_mode == 'rev':
-        J = _rev_jacobian(fxn, x, n_outputs, retain_graph)
+        if memfrugal:
+            J = _rev_jacobian_simple(fxn, x, n_outputs, retain_graph)
+        else:
+            J = _rev_jacobian(fxn, x, n_outputs, retain_graph)
     else:
         raise ValueError('Invalid autodiff mode: %s. Choose "fwd" or "rev"'
                          '' % ad_mode)
@@ -42,7 +52,6 @@ def jacobian(fxn, x, n_outputs, retain_graph=True, ad_mode='fwd'):
     return J
 
 
-@torch.enable_grad()
 def _rev_jacobian(fxn, x, n_outputs, retain_graph):
     """
     the basic idea is to create N copies of the input
@@ -77,7 +86,39 @@ def _rev_jacobian(fxn, x, n_outputs, retain_graph):
     return J[0]
 
 
-@torch.enable_grad()
+def _rev_jacobian_simple(fxn, x, n_outputs, retain_graph):
+    """
+    This implementation loops over the jacobian columns
+    and builds them one-by-one. It's simpler to understand
+    the code, and also uses less memory -- but at a significant
+    compute cost (10x+ in my tests)
+    """
+
+    n_outputs = int(n_outputs)
+
+    xd = x.detach()
+    xd.requires_grad_(True)
+    n_inputs = int(xd.size(0))
+
+    y = fxn(xd.view(1, n_inputs)).view(n_outputs)
+
+    if y.size(0) != n_outputs:
+        raise ValueError('Function `fxn` does not give output '
+                         'compatible with `n_outputs`=%d, size '
+                         'of fxn(x) : %s'
+                         '' % (n_outputs, y.size(0)))
+    I = torch.eye(n_outputs, device=xd.device)
+
+    J = torch.zeros([n_outputs, n_inputs], device=xd.device)
+    for i in range(n_outputs):
+        J[i,:] = autograd.grad(y, xd,
+                               grad_outputs=I[i],
+                               retain_graph=retain_graph,
+                               create_graph=True,  # for higher order derivatives
+                               )[0]
+    return J
+
+
 def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
     """
     This implementation is very similar to the above, but with
@@ -94,6 +135,39 @@ def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
          (Thanks to Jamie Townsend for this awesome trick!)
     """
 
+    # here we have to use the "repeat trick" twice, first for the
+    # reverse mode call then for the forward mode call
+
+    n_inputs = int(x.size(0))
+
+    repeat_arg = (n_inputs,) + (1,) * len(x.size())
+    xr = x.detach().repeat(*repeat_arg)
+    xr.requires_grad_(True)
+
+    y = fxn(xr).view(n_inputs, -1)
+
+    if y.size(0) != n_inputs:
+      raise ValueError('Function `fxn` does not give output compatible '
+                       'with `n_outputs`=%d, size of fxn(x) : '
+                       '%s' % (n_inputs, y.size(0)))
+
+    v = torch.ones(n_outputs, device=x.device, requires_grad=True)
+    v = v.repeat(n_inputs, 1)
+
+    vjp = torch.autograd.grad(y, xr, grad_outputs=v, 
+                              create_graph=True,
+                              retain_graph=True)[0]
+    I = torch.eye(n_inputs, device=x.device)
+
+    J = autograd.grad(vjp, v, grad_outputs=I, 
+                      retain_graph=True, 
+                      create_graph=True)[0].T
+
+    return J
+
+
+def _fwd_jacobian_simple(fxn, x, n_outputs, retain_graph):
+
     xd = x.detach().requires_grad_(True)
     n_inputs = int(xd.size(0))
 
@@ -107,27 +181,22 @@ def _fwd_jacobian(fxn, x, n_outputs, retain_graph):
                          'of fxn(x) : %s'
                          '' % (n_outputs, y.size(0)))
 
-    vjp = torch.autograd.grad(y, xd, grad_outputs=v, 
-                              create_graph=True,
-                              retain_graph=retain_graph)[0]
+    vjp = autograd.grad(y, xd, grad_outputs=v, 
+                        create_graph=True,
+                        retain_graph=retain_graph)[0]
     assert vjp.shape == (n_inputs,)
 
-    # TODO somehow the repeat trick does not work anymore
-    #      now that we have to take derivatives wrt v
-    #      so loop over basis vectors and compose jacobian col by col
-
     I = torch.eye(n_inputs, device=x.device)
-    J = []
+
+    J = torch.zeros([n_outputs, n_inputs], device=x.device)
     for i in range(n_inputs):
-        Ji = autograd.grad(vjp, v,
-                          grad_outputs=I[i],
-                          retain_graph=retain_graph,
-                          create_graph=True,  # for higher order derivatives
-                          )
-        J.append(Ji[0])
+        J[:,i] = autograd.grad(vjp, v,
+                               grad_outputs=I[i],
+                               retain_graph=retain_graph,
+                               create_graph=True,
+                               )[0]
 
-    return torch.stack(J).t()
-
+    return J
 
 
 def jacobian_grammian(fxn, x, n_outputs, normalize=False):
@@ -152,12 +221,12 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     """
 
     J = jacobian(fxn, x, n_outputs)
-    Jc = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
+    #J = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
     #assert J.shape == (n_outputs, n)
 
-    G = torch.mm(torch.transpose(Jc, 0, 1), Jc) # Jacobian Grammian (outer product)
+    G = torch.mm(torch.transpose(J, 0, 1), J) # Jacobian Grammian (outer product)
 
     if normalize:
         h = torch.diag(G)             
