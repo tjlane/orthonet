@@ -13,12 +13,12 @@ from torch.utils.data.distributed import DistributedSampler
 import torch.multiprocessing as mp
 import torch.distributed as dist
 
-from apex.parallel import Reducer
 
 from orthonet import visual
 from orthonet import jacob
+from orthonet.reducer import Reducer
 from orthonet.loaders import load_bot, load_mnist, load_dsprites
-from orthonet.models import AE, VAE, SpritesVAE, MnistVAE, VisDDP
+from orthonet.models import AE, VAE, SpritesVAE, SpritesVAEbn, MnistVAE
 
 import wandb
 
@@ -33,7 +33,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='run VAE on simple simulation')
     parser.add_argument('data_file', type=str, help='data file to load')
     parser.add_argument('--model-type', type=str, 
-                        choices=['ae', 'vae', 'spritesvae', 'mnistvae'],
+                        choices=['ae', 'vae', 'spritesvae', 'spritesvaebn', 'mnistvae'],
                         required=True, default='ae',
                         help='architecture')
     parser.add_argument('--ngpu', type=int, default=1,
@@ -94,7 +94,6 @@ def train(epoch, train_loader, model, device, use_wandb=False):
     train_loss = 0.0
     bce_loss   = 0.0
     jgl_loss   = 0.0
-
     
     for batch_idx, batch in enumerate(train_loader):
 
@@ -112,8 +111,8 @@ def train(epoch, train_loader, model, device, use_wandb=False):
         
         bce, jgl, _, _ = fwd_pass(model, data)
 
-        bce_loss += bce.item()
-        jgl_loss += jgl.item()
+        bce_loss   += bce.item()
+        jgl_loss   += jgl.item()
         train_loss += bce.item() + jgl.item()
 
         loss = bce + jgl
@@ -131,12 +130,11 @@ def train(epoch, train_loader, model, device, use_wandb=False):
         finish_time = time.perf_counter()
         rate = len(data) / (finish_time - start_time)
 
-        if (device == 0) and use_wandb:
+        if (device == 0) and use_wandb and (batch_idx % 10 == 0):
             wandb.log({'epoch'       : epoch,
-                       'seen'        : batch_idx * len(data),
                        'train_loss'  : loss.item() / len(data),
-                       'bce_loss'    : bce.item() / len(data),
-                       'jgl_loss'    : jgl.item() / len(data),
+                       'bce_loss'    : bce.item()  / len(data),
+                       'jgl_loss'    : jgl.item()  / len(data),
                        'proc_rate'   : rate
                        })
 
@@ -148,17 +146,31 @@ def train(epoch, train_loader, model, device, use_wandb=False):
                     len(train_loader.dataset),
                     100. * batch_idx / len(train_loader),
                     loss.item() / len(data),
-                    bce.item() / len(data), 
-                    jgl.item() / len(data),
+                    bce.item()  / len(data), 
+                    jgl.item()  / len(data),
                     rate ))
 
 
     avg_loss = train_loss / len(train_loader.dataset)
+    bce_avg = bce_loss    / len(train_loader.dataset)
+    jgl_avg = jgl_loss    / len(train_loader.dataset)
+    if (device == 0) and use_wandb:
+        wandb.log({'epoch'       : epoch,
+                   'train_loss'  : loss.item() / len(data),
+                   'bce_loss'    : bce.item()  / len(data),
+                   'jgl_loss'    : jgl.item()  / len(data),
+                   'proc_rate'   : rate
+                   })
+
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, avg_loss))
 
-    bce_avg = bce_loss / len(train_loader.dataset)
-    jgl_avg = jgl_loss / len(train_loader.dataset)
+    if (device == 0) and use_wandb:
+        wandb.log({'epoch'       : epoch,
+                   'train_Eavg'  : avg_loss,
+                   'bce_Eavg'    : bce_avg,
+                   'jgl_Eavg'    : jgl_avg
+                   })
 
     return avg_loss, bce_avg, jgl_avg
 
@@ -182,8 +194,8 @@ def test(epoch, test_loader, model, device, use_wandb=False):
             data = data.cuda(non_blocking=True)
             bce, jgl, z, y = fwd_pass(model, data)
 
-            test_bce += bce.item()
-            test_jgl += jgl.item()
+            test_bce  += bce.item()
+            test_jgl  += jgl.item()
             test_loss += bce.item() + jgl.item()
 
     avg_loss = test_loss / len(test_loader.dataset)
@@ -193,9 +205,12 @@ def test(epoch, test_loader, model, device, use_wandb=False):
            test_jgl / len(test_loader.dataset) ))
 
     if (device == 0) and use_wandb:
-        wandb.log({'epoch' : epoch,
+        wandb.log({'epoch'     : epoch,
                    'test_loss' : avg_loss})
 
+        y_cpu = y.cpu()
+        n_samples = min(y_cpu.size(0), 8)
+        wandb.log({'samples' : [wandb.Image(y_cpu[j], caption="recon%d" % j) for j in range(n_samples)]})
 
     return avg_loss
 
@@ -237,9 +252,11 @@ def main(device, args):
     if args.distributed:
         loader_kwargs = {'num_workers': 0, 
                          'pin_memory' : True,
-                         'shuffle'    : False}
+                         'shuffle'    : False,
+                         'drop_last'  : True,
+                         'preload'    : False}
     else:
-        loader_kwargs = {'num_workers': 2, 
+        loader_kwargs = {'num_workers': 1, 
                          'pin_memory' : True,
                          'shuffle' :    True}
 
@@ -252,7 +269,8 @@ def main(device, args):
         ll = load_dsprites(args.batch_size,
                            device, # rank
                            args.world_size,
-                           preload=False)
+                           distributed=args.distributed,
+                           loader_kwargs=loader_kwargs)
 
     else:
         ll = load_bot(args.data_file, 
@@ -275,19 +293,15 @@ def main(device, args):
         model = VAE(field_shape, latent_size, beta=args.vaebeta)
     elif args.model_type == 'spritesvae':
         model = SpritesVAE(field_shape, latent_size, beta=args.vaebeta)
+    elif args.model_type == 'spritesvaebn':
+        model = SpritesVAEbn(field_shape, latent_size, beta=args.vaebeta)
     elif args.model_type == 'mnistvae':
         model = MnistVAE(field_shape, latent_size, beta=args.vaebeta)
 
     model.cuda()
     if args.distributed:
-        reducer = Reducer(model) # bit strange but roll w it for now...
-        model.reducer = reducer
-        #model = VisDDP(model, 
-        #               device_ids=[device], 
-        #               output_device=device,
-        #               broadcast_buffers=True,       # True
-        #               find_unused_parameters=True,  # False
-        #               check_reduction=True)         # False
+        reducer = Reducer(model)
+        model.reducer = reducer # just to keep them together
 
     if (device == 0) and args.use_wandb:
         wandb.watch(model)
