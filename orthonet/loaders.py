@@ -1,7 +1,7 @@
 
 import h5py
 import numpy as np
-from math import ceil
+from math import ceil, floor
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -120,13 +120,15 @@ class H5Dataset(Dataset):
 
 class DistributedDataLoader:
 
-    def __init__(self, dataset, rank, size, batch_size=1, pin_memory=False):
+    def __init__(self, dataset, rank, size, batch_size=1, 
+                 pin_memory=False, drop_last=False):
 
         self.dataset = dataset
         self.rank = rank
         self.size = size
         self.batch_size = batch_size
         self.pin_memory = pin_memory
+        self.drop_last = drop_last
 
         self.epoch = 0
 
@@ -154,7 +156,10 @@ class DistributedDataLoader:
     @property
     def n_iter(self):
         start, stop = self.data_range
-        return ceil( (stop - start) / self.batch_size )
+        if self.drop_last:
+            return floor( (stop - start) / self.batch_size )
+        else:
+            return ceil( (stop - start) / self.batch_size )
 
 
     def __iter__(self):
@@ -175,6 +180,9 @@ class DistributedDataLoader:
 
             if self.pin_memory:
                 data = pm.pin_memory(data)
+
+            if self.drop_last:
+                assert data.shape[0] == self.batch_size
 
             yield data
 
@@ -307,25 +315,47 @@ def load_mnist(batch_size, loader_kwargs={}):
     return train_loader, test_loader, data_shape
 
 
-def load_dsprites(batch_size, rank=0, size=1, preload=False, pin_memory=True):
+def load_dsprites(batch_size, rank=0, size=1, distributed=False, loader_kwargs={}):
 
     data_file = '/scratch/tjlane/dsprites.h5'
     train_ds = H5Dataset(data_file, data_field='imgs_shuffled_train')
     test_ds  = H5Dataset(data_file, data_field='imgs_shuffled_test')
 
-    if preload:
-        DDL = PreloadingDDL
-    else:
-        DDL = DistributedDataLoader
-    
     # each rank gets a unique training set
-    train_loader = DDL(train_ds, rank, size, batch_size=batch_size, pin_memory=pin_memory)
-
     # but identical test sets
-    test_loader = DDL(test_ds, 0, 1, batch_size=batch_size, pin_memory=pin_memory)
 
-    print('DataLoader rank %d :: %s :: preload=%d || train : %d / test : %d'
-          '' % (rank, str(train_loader.data_range), int(preload), len(train_ds), len(test_ds)))
+    if distributed:
+
+        if loader_kwargs['preload']:
+            DDL = PreloadingDDL
+        else:
+            DDL = DistributedDataLoader
+
+        train_loader = DDL(train_ds, rank, size, 
+                           batch_size=batch_size, 
+                           pin_memory=loader_kwargs['pin_memory'], 
+                           drop_last=loader_kwargs['drop_last'])
+        test_loader = DDL(test_ds, 0, 1, 
+                          batch_size=batch_size, 
+                          pin_memory=loader_kwargs['pin_memory'], 
+                          drop_last=loader_kwargs['drop_last'])
+
+        print('DataLoader rank %d :: %s :: preload=%d || train : %d / test : %d'
+              '' % (rank, 
+                    str(train_loader.data_range),
+                    int(loader_kwargs['preload']),
+                    len(train_ds),
+                    len(test_ds)))
+
+    else: # not distributed
+        train_loader = DataLoader(train_ds,
+                                  batch_size=batch_size,
+                                  **loader_kwargs)
+
+        test_loader = DataLoader(test_ds,
+                                 batch_size=batch_size,
+                                 **loader_kwargs)
+
 
     data_shape = (len(train_ds) + len(test_ds),) + train_ds.shape
 

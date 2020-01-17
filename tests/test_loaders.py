@@ -143,6 +143,10 @@ def test_batch_size():
     for i,b in enumerate(ddl):
         assert np.all(b.numpy() == ds[i*3:(i+1)*3])
 
+    ds = np.random.randn(n_dpts, 2, 3)
+    ddl = loaders.DistributedDataLoader(ds, rank, size, batch_size=3, drop_last=True)
+    assert len(ddl) == n_dpts // 3
+
     return
 
 def test_distributive():
