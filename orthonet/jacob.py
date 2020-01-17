@@ -220,8 +220,13 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
         The Jacobian-Grammian J^T * J ( size n x n, n=size(flat(x))) )
     """
 
-    J = jacobian(fxn, x, n_outputs)
-    #J = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
+    J  = jacobian(fxn, x, n_outputs)
+
+    #J2 = jacobian(fxn, x, n_outputs, memfrugal=True)
+    #if not torch.allclose( J, J2 ):
+    #    print('***', torch.sum(torch.abs(J-J2)))
+
+    J = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
     #assert J.shape == (n_outputs, n)
