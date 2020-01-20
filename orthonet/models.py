@@ -138,7 +138,7 @@ class AE(nn.Module):
 
     @staticmethod
     def loss_function(x, recon_x):
-        recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
+        #recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
         BCE = F.binary_cross_entropy(recon_x, 
                                      x.view(recon_x.shape), 
                                      reduction='sum')
@@ -268,7 +268,7 @@ class VAE(nn.Module):
         return self.decode(z), mu, logvar
 
     def loss_function(self, x, recon_x, mu, logvar):
-        recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
+        #recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
         BCE = F.binary_cross_entropy(recon_x, 
                                      x.view(recon_x.shape),
                                      reduction='sum')
@@ -451,4 +451,64 @@ class MnistVAE(VAE):
                         )
 
         return
+
+
+class TicaVAE(VAE):
+
+    def __init__(self, input_shape, latent_size, beta=1.0):
+        super(TicaVAE, self).__init__(input_shape, latent_size, beta)
+
+        print(input_shape)
+
+        # encoder
+        self.shared     = nn.Sequential(
+                            nn.Linear(input_shape[0], 64),
+                            nn.LeakyReLU(0.2, inplace=False)
+                                       )
+
+        self.mu_branch  = nn.Sequential(
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=False),
+                          )
+        self.var_branch = nn.Sequential(
+                            nn.Linear(64, self.latent_size),
+                            nn.LeakyReLU(0.2, inplace=False),
+                          )
+
+        # decoder
+        self.decode_layers = nn.Sequential(
+                            nn.Linear(self.latent_size, 64),
+                            nn.LeakyReLU(0.2, inplace=False),
+                          
+                            nn.Linear(64, input_shape[0]),
+                            nn.LeakyReLU(0.2, inplace=False)
+                          )
+
+
+    def encode(self, x, ret_var=False):
+        out = self.shared(x.view(-1,*self.input_shape))
+        out_flat = out.squeeze()
+        if ret_var:
+            return self.mu_branch(out_flat), self.var_branch(out_flat)
+        else:
+            return self.mu_branch(out_flat)
+
+
+    def decode(self, z):
+        if type(z) is tuple:
+            z = z[0]
+        out = self.decode_layers(z).squeeze()
+        return out.squeeze()
+
+
+    def loss_function(self, x, recon_x, mu, logvar):
+        MSE = F.mse_loss(recon_x,
+                         x.view(recon_x.shape),
+                         reduction='sum')
+
+        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+        return MSE + self.beta * KLD
+
 

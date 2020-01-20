@@ -271,7 +271,7 @@ def jg_loss(fxn, x, n_outputs, reduction='mean', diagonal_weight=1.0):
         The total loss over the dataset.
     """
 
-    assert len(x.shape) == 2 # should be points x dims
+    assert len(x.shape) == 2, x.shape # should be points x dims
 
     jg_accum = torch.zeros(x.size(1), x.size(1), device=x.device) 
     for i in range(x.size(0)):

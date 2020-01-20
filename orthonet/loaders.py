@@ -256,7 +256,7 @@ class PreloadingDDL(DistributedDataLoader):
 # --- below here is project/cluster specific ----------------------------------
 
 
-def load_bot(data_file, batch_size, max_points=None,
+def load_gen(data_file, batch_size, max_points=None,
              loader_kwargs={}, traintest_split=0.9):
     """
     Load bot simulation data into test/train loaders.

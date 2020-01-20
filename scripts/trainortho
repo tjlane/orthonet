@@ -16,8 +16,8 @@ import torch.distributed as dist
 from orthonet import visual
 from orthonet import jacob
 from orthonet.reducer import Reducer
-from orthonet.loaders import load_bot, load_mnist, load_dsprites
-from orthonet.models import AE, VAE, SpritesVAE, MnistVAE
+from orthonet.loaders import load_gen, load_mnist, load_dsprites
+from orthonet.models import AE, VAE, SpritesVAE, MnistVAE, TicaVAE
 
 import wandb
 
@@ -32,7 +32,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='run VAE on simple simulation')
     parser.add_argument('data_file', type=str, help='data file to load')
     parser.add_argument('--model-type', type=str, 
-                        choices=['ae', 'vae', 'spritesvae', 'spritesvaebn', 'mnistvae'],
+                        choices=['ae', 'vae', 'spritesvae', 'mnistvae', 'ticavae'],
                         required=True, default='ae',
                         help='architecture')
     parser.add_argument('--ngpu', type=int, default=1,
@@ -235,7 +235,8 @@ def main(device, args):
     else:
         loader_kwargs = {'num_workers': 1, 
                          'pin_memory' : True,
-                         'shuffle' :    True}
+                         'shuffle'    : True,
+                         'drop_last'  : True}
 
 
     if args.data_file == 'mnist':
@@ -250,7 +251,7 @@ def main(device, args):
                            loader_kwargs=loader_kwargs)
 
     else:
-        ll = load_bot(args.data_file, 
+        ll = load_gen(args.data_file, 
                       args.batch_size,
                       loader_kwargs=loader_kwargs)
 
@@ -272,6 +273,8 @@ def main(device, args):
         model = SpritesVAE(field_shape, latent_size, beta=args.vaebeta)
     elif args.model_type == 'mnistvae':
         model = MnistVAE(field_shape, latent_size, beta=args.vaebeta)
+    elif args.model_type == 'ticavae':
+        model = TicaVAE(field_shape, latent_size, beta=args.vaebeta)
 
     model.cuda()
     if args.distributed:
@@ -342,7 +345,12 @@ def main(device, args):
 
     if device == 0:
 
-        visual.save_latent_traversals(args.resdir, model, args.latent_size, field_shape)
+        if len(field_shape) == 2:
+            visual.save_latent_traversals(args.resdir,
+                                          model, 
+                                          args.latent_size,
+                                          field_shape)
+
         visual.plot_loss_curves(train_loss, test_loss, 
                                 save=pjoin(args.resdir, 'loss_curves.png'))
 
