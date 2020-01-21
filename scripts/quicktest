@@ -1,6 +1,7 @@
 ./trainortho ../toymodels/bot_quarter_circle_sigma2.00.h5 --epochs 1 --model-type vae --no-jac --batch-size 256
 ./trainortho mnist --model-type mnistvae --epochs 1 --no-jac --batch-size 256
 ./trainortho sprites --model-type spritesvae --epochs 1 --no-jac --batch-size 256
+./trainortho ../toymodels/test.h5 --model-type ticavae --epochs 1 --no-jac --batch-size 256
 
 rm -r ortho_*
 rm -r data

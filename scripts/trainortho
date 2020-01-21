@@ -95,8 +95,8 @@ def train(epoch, train_loader, model, optimizer, device, use_wandb=False):
         else:
             data = batch
 
-        if batch.size(0) == 0:
-            continue
+        #if batch.size(0) == 0:
+        #    continue
 
         data = data.cuda(non_blocking=True)
         
@@ -127,7 +127,7 @@ def train(epoch, train_loader, model, optimizer, device, use_wandb=False):
                        'jgl_loss'    : jgl.item()  / len(data),
                        'proc_rate'   : rate})
 
-        if batch_idx % 10 == 0:
+        if batch_idx % 1 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\t'
                   'Loss: {:.6f} | BCE: {:.2e} | JAC: {:.2e} | {:.1f} Hz'.format(
                     epoch, 
@@ -216,10 +216,11 @@ def main(device, args):
 
         dist.init_process_group(                                   
             backend='nccl',                                         
-            init_method='env://',                                   
+            init_method='file://' + os.path.abspath('.') + '/' + args.resdir + '/port',
             world_size=args.world_size,
             rank=rank                                               
-        )   
+        )
+        #print('file://' + os.path.abspath('.') + '/' + args.resdir + '/port') 
 
     # -------------------
     # data loading
@@ -278,7 +279,7 @@ def main(device, args):
 
     model.cuda()
     if args.distributed:
-        reducer = Reducer(model)
+        reducer = Reducer(model, gpu_reduce=True)
         model.reducer = reducer # just to keep them together
 
     if (device == 0) and args.use_wandb:
@@ -307,12 +308,12 @@ def main(device, args):
     # -------------------
     # optimizer 
 
-    lr = 1e-3
+    lr = 5e-4
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=lr,
                                  weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
-                                                step_size=70,
+                                                step_size=90,
                                                 gamma=0.1)
 
     # -------------------
@@ -415,9 +416,6 @@ if __name__ == "__main__":
         print(' >> %d nodes' % args.nodes)
         print(' >> %d gpu/node' % args.ngpu)
         print('')
-
-        os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '8899'
 
         mp.spawn(main, nprocs=args.ngpu, args=(args,), join=True)
 

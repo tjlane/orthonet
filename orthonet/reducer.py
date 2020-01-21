@@ -98,7 +98,13 @@ class Reducer(object):
         module_or_grads_list: Either a network definition (module) being run in multi-gpu/distributed mode, or an iterable of gradients to be reduced.  If a module is passed in, the Reducer constructor will sync the parameters across processes (broadcasting from rank 0) to make sure they're all initialized with the same values.  If a list of gradients (that came from some module) is passed in, the user is responsible for manually syncing that module's parameters at the beginning of training.
     """
 
-    def __init__(self, module_or_grads_list):
+    def __init__(self, module_or_grads_list, gpu_reduce=False):
+
+        if gpu_reduce:
+            self._red = dist.all_reduce_multigpu
+        else:
+            self._red = dist.all_reduce
+    
         if isinstance(module_or_grads_list, Module):
             self.module = module_or_grads_list
             flat_dist_call([param.data for param in self.module.parameters()], dist.broadcast, (0,) )

@@ -221,11 +221,6 @@ def jacobian_grammian(fxn, x, n_outputs, normalize=False):
     """
 
     J  = jacobian(fxn, x, n_outputs)
-
-    #J2 = jacobian(fxn, x, n_outputs, memfrugal=True)
-    #if not torch.allclose( J, J2 ):
-    #    print('***', torch.sum(torch.abs(J-J2)))
-
     J = J.clamp(-1*2**31, 2**31) # prevent numbers that are too large
 
     #n = x.size(0)
