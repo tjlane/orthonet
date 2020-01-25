@@ -10,30 +10,6 @@ from torch.nn import functional as F
 from orthonet import jacob
 
 
-class VisDDP(nn.parallel.DistributedDataParallel):
-    """
-    DataParallel hides the module's methods to avoid name conflicts
-    This class simply exposes a few key methods from the base classes
-    """
-
-    def encode(self, *args):
-        return self.module.encode(*args)
-
-    def decode(self, *args):
-        return self.module.decode(*args)
-
-    def loss_function(self, *args):
-        return self.module.loss_function(*args)
-
-    @property
-    def input_size(self):
-        if hasattr(self.module, 'input_size'):
-            r = self.module.input_size
-        else:
-            r = None
-        return r
-
-
 class AE(nn.Module):
 
     # A NOTE about BatchNorm track_running_stats
@@ -268,7 +244,7 @@ class VAE(nn.Module):
         return self.decode(z), mu, logvar
 
     def loss_function(self, x, recon_x, mu, logvar):
-        #recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
+        recon_x = torch.where(torch.isnan(recon_x), torch.zeros_like(recon_x), recon_x)
         BCE = F.binary_cross_entropy(recon_x, 
                                      x.view(recon_x.shape),
                                      reduction='sum')
