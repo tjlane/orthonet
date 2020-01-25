@@ -262,6 +262,9 @@ def load_gen(data_file, batch_size, max_points=None,
     Load bot simulation data into test/train loaders.
     """
 
+    if loader_kwargs.pop('preload', False): # removes key
+        raise ValueError('preload in load_gen')
+
     train_ds = H5Dataset(data_file, clip=(0.0, 1.0)) # bot data
     test_ds  = H5Dataset(data_file, clip=(0.0, 1.0))
 
