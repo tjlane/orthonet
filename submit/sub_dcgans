@@ -3,9 +3,9 @@
 import os
 import subprocess
 
-nzs    = [8, 16, 32, 64]
-n_epch = 60
-obetas = [0.1, 1.0, 10.0]
+nzs    = [32]
+n_epch = 100
+obetas = [1.0]
 dbetas = [1.0]
 
 for nz in nzs:
@@ -17,11 +17,10 @@ for nz in nzs:
 
             # fmt: python dcgan.py <nz> <ortho_beta> <diag_beta> <num_epochs>
 
-            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef && " +\
-            "python /u/xl/tjlane/opt/orthonet/orthonet/dcgan.py %d %f %f %d >& %s" % (nz, obeta, dbeta, n_epch, logfile)
+            sub_txt = "cd /u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/celeba && " +\
+            "python ./dcgan.py %d %f %f %d >& %s" % (nz, obeta, dbeta, n_epch, logfile)
 
-            cmd = 'bsub -q slacgpu -gpu "num=4:gmodel=TeslaV100_SXM2_32GB" "%s"' % sub_txt
-
+            cmd = 'sbatch -p ml -A ml --mem=64g --time=168:00:00 --job-name=dcgan -n 4 --gpus geforce_rtx_2080_ti:4 --wrap "%s"' % (sub_txt,)
             print('>>', cmd)
             subprocess.call(cmd, shell=True)
 

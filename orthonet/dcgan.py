@@ -26,6 +26,9 @@ from orthonet import jacob
 import numpy as np
 import matplotlib.pyplot as plt
 
+import wandb
+wandb.init(project="orthoGAN")
+
 # Set random seed for reproducibility
 #manualSeed = 999
 manualSeed = random.randint(1, 10000) # use if you want new results
@@ -37,11 +40,11 @@ print('\n\n >>>>>> DCGAN >>>>>>')
 # Inputs
 
 ngpu        = 4
-dataroot    = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef/training_data"
+dataroot    = "/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/celeba"
 workers     = ngpu
 batch_size  = ngpu
 image_size  = 64
-nc          = 1
+nc          = 3
 ngf         = 64
 ndf         = 64
 lr          = 0.0002
@@ -63,7 +66,7 @@ print('')
 
 
 # decide on a place to put results
-bas_dir    = '/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/kdef/models'
+bas_dir    = '/u/xl/tjlane/cryoem/dynanet/particle_simulations/ortho/celeba/models'
 res_dir    = 'nz%d_ortho%.2e_d%.2e_epoch%d' % (nz, ortho_beta, diagn_beta, num_epochs)
 out_dir    = os.path.join(bas_dir, res_dir)
 if os.path.exists(out_dir):
@@ -77,9 +80,10 @@ dataset = dset.ImageFolder(root=dataroot,
                            transform=transforms.Compose([
                                transforms.Resize(image_size),
                                transforms.CenterCrop(image_size),
-                               transforms.Grayscale(),
+                               #transforms.Grayscale(),
                                transforms.ToTensor(),
-                               transforms.Normalize((0.5,), (0.5,)),
+                               #transforms.Normalize((0.5,), (0.5,)),
+                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                            ]))
 
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
@@ -178,6 +182,9 @@ netD.apply(weights_init)
 print('\n--- DISCRIMINATOR ---')
 print(netD)
 
+wandb.watch(netG)
+wandb.watch(netD)
+
 # loss functions
 criterion = nn.BCELoss()
 
@@ -261,7 +268,7 @@ for epoch in range(num_epochs):
 
         # -- tjl addition
         if ortho_beta > 0.0:
-            errGJ = ortho_beta * jacob.jg_loss(netG, noise.squeeze(), image_size*image_size, 
+            errGJ = ortho_beta * jacob.jg_loss(netG, noise.squeeze(), image_size*image_size*nc,
                                                diagonal_weight=diagn_beta,
                                                reduction='mean')
             errGJ.backward()
@@ -288,12 +295,16 @@ for epoch in range(num_epochs):
         # Save Losses for plotting later
         G_losses.append(errG.item())
         D_losses.append(errD.item())
+        wandb.log({'G_loss' : errG.item(),
+                   'D_loss' : errD.item()})
         
         # Check how the generator is doing by saving G's output on fixed_noise
         if (iters % 500 == 0) or ((epoch == num_epochs-1) and (i == len(dataloader)-1)):
             with torch.no_grad():
                 fake = netG(fixed_noise).detach().cpu()
-            img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
+            img_grid = vutils.make_grid(fake, padding=2, normalize=True)
+            img_list.append(img_grid)
+            wandb.log({'generated' : [wandb.Image(img_grid)] })
             
         iters += 1
 
